@@ -1,0 +1,83 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Shop</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body data-page="shop">
+  <header class="site-header">
+    <div class="inner-wrap">
+      <a class="brand" href="index.html">
+        <div class="site-logo" aria-label="Site logo">
+          <img class="site-logo-image" src="" alt="">
+          <div class="site-logo-placeholder" aria-hidden="true">✦</div>
+        </div>
+        <div>
+          <p class="eyebrow site-brand-name"></p>
+          <h1>Fine handmade treasures</h1>
+        </div>
+      </a>
+      <nav class="nav-links">
+        <a href="index.html">Home</a>
+        <a href="shop.html">Shop</a>
+        <a href="collections.html">Collections</a>
+        <a href="tiers.html">Treasure Tiers</a>
+        <a href="about.html">Meet the Merchant</a>
+        <a href="reviews.html">Traveller Reviews</a>
+        <a href="merchants-guide.html">Merchant's Guide</a>
+        <a href="contact.html">Send Word to the Merchant</a>
+        <a href="cabinet.html">Curiosity Cabinet <span class="cart-count">0</span></a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="page-content">
+    <section class="section-intro">
+      <h2>Shop the Cabinet</h2>
+      <p>Handmade treasures from every collection, ready to join your story.</p>
+    </section>
+
+    <section class="section-intro">
+      <div class="form-grid">
+        <div class="form-group">
+          <label for="product-search">Search treasures</label>
+          <input id="product-search" type="text" placeholder="Search by enchantment, collection, or title">
+        </div>
+        <div class="form-group">
+          <label for="collection-filter">Filter by collection</label>
+          <select id="collection-filter">
+            <option value="">All collections</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="tier-filter">Filter by tier</label>
+          <select id="tier-filter">
+            <option value="">All tiers</option>
+          </select>
+        </div>
+      </div>
+      <h3>🛍 Treasures</h3>
+      <p class="results-text">Showing <strong id="shop-results-count">0</strong> treasures.</p>
+      <div class="grid product-grid"></div>
+
+      <article class="card" style="margin-top: 20px;">
+        <h3>📖 Helpful Pages</h3>
+        <div id="helpful-pages-results">
+          <p class="muted">Search for topics like shipping, contact, merchant, forest, or haunted.</p>
+        </div>
+      </article>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="inner-wrap">
+      <p>Every treasure has a story ✦</p>
+      <p>Instagram: <a class="social-instagram-link" href="#" target="_blank" rel="noreferrer"></a></p>
+      <p class="site-copyright"></p>
+    </div>
+  </footer>
+  <script src="script.js" defer></script>
+</body>
+</html>

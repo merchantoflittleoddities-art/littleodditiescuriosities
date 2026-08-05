@@ -1,0 +1,1382 @@
+/* =============================================================
+   Little Oddities Curiosities — script.js
+   Single source of behaviour for every page.
+   Reads product, collection, tier, settings and FAQ data
+   from JSON files so no values need to be hardcoded in HTML.
+   ============================================================= */
+
+// ── Data paths ──────────────────────────────────────────────
+const CART_KEY             = "littleOdditiesCabinet";
+const SETTINGS_PATH        = "./data/settings.json";
+const PRODUCTS_PATH        = "./data/catalogue.json";
+const COLLECTIONS_PATH     = "./data/collections.json";
+const TIERS_PATH           = "./data/tiers.json";
+const MERCHANTS_GUIDE_PATH = "./data/merchants-guide.json";
+const INVENTORY_URL        = "/.netlify/functions/get-inventory";
+const IMAGE_ROOT           = "assets/images/products";
+const FREE_SHIPPING_THRESHOLD = 30;
+const SHIPPING_OPTIONS = {
+  "royal-courier": {
+    id: "royal-courier",
+    name: "Royal Courier",
+    price: 2.99,
+    eta: "Estimated delivery: 2–4 working days"
+  },
+  "royal-courier-tracked": {
+    id: "royal-courier-tracked",
+    name: "Royal Courier Tracked",
+    price: 3.99,
+    eta: "Estimated delivery: 1–2 working days"
+  },
+  "free-journey": {
+    id: "free-journey",
+    name: "Free Journey",
+    price: 0,
+    eta: "Automatically applied when your treasure subtotal reaches £30.00."
+  }
+};
+
+// ── Default fallback data ────────────────────────────────────
+const DEFAULT_PRODUCTS       = [];
+const DEFAULT_COLLECTIONS    = [];
+const DEFAULT_TIERS          = [];
+const DEFAULT_MERCHANT_GUIDE = {
+  title: "The Merchant's Guide",
+  subtitle: "Every traveller has a few questions before beginning their journey. Here you'll find answers to some of the most common curiosities.",
+  merchantGuide: []
+};
+const DEFAULT_SETTINGS = {
+  shop: {
+    name: "Little Oddities Curiosities",
+    tagline: "Tiny treasures & curious creations",
+    currency: "GBP",
+    currencySymbol: "£",
+    language: "en-GB"
+  },
+  socials: {
+    instagram: "https://instagram.com/little.oddities_curiosities",
+    instagramHandle: "@little.oddities_curiosities"
+  },
+  contact: {
+    email: "",
+    contactPageTitle: "Send Word to the Merchant",
+    submitButton: "Send to the Merchant"
+  },
+  shipping: {
+    shipsTo: ["United Kingdom"],
+    processingTime: "1–3 working days",
+    shippingMessage: "Currently shipping within the United Kingdom only."
+  },
+  website: {
+    merchantRecommendation: true,
+    showReviews: false,
+    showWishlist: false,
+    maintenanceMode: false
+  },
+  branding: {
+    logo: "assets/images/logo/logo.png",
+    favicon: "assets/images/logo/favicon.png",
+    altText: "Little Oddities Curiosities logo"
+  }
+};
+
+
+// ============================================================
+// Utilities
+// ============================================================
+
+/** Formats a numeric amount using the shop currency from settings.json */
+function formatPrice(amount) {
+  const settings = window.SETTINGS || DEFAULT_SETTINGS;
+  const symbol   = settings.shop?.currencySymbol || "£";
+  const currency = settings.shop?.currency       || "GBP";
+  const locale   = settings.shop?.language       || "en-GB";
+  const numeric  = Number(amount || 0);
+  if (typeof Intl !== "undefined") {
+    try {
+      return new Intl.NumberFormat(locale, {
+        style: "currency",
+        currency,
+        currencyDisplay: "symbol"
+      }).format(numeric);
+    } catch (e) {
+      return `${symbol}${numeric.toFixed(2)}`;
+    }
+  }
+  return `${symbol}${numeric.toFixed(2)}`;
+}
+
+/** Returns a single URL query-string parameter value */
+function getQueryParam(name) {
+  return new URLSearchParams(window.location.search).get(name);
+}
+
+/** Looks up tier metadata from the global tiers cache */
+function getTierMeta(tierName) {
+  if (!window.ALL_TIERS || !Array.isArray(window.ALL_TIERS)) return null;
+  return window.ALL_TIERS.find(
+    (tier) => tier.name === tierName || tier.id === tierName
+  ) || null;
+}
+
+/**
+ * Returns the resolved price for a product.
+ * Prefers the tier price from tiers.json; falls back to the product's own price field.
+ */
+function getProductPrice(product) {
+  const tierMeta = getTierMeta(product.tier);
+  return (tierMeta && tierMeta.price) || product.price || 0;
+}
+
+/** Returns the globally cached products array */
+function getAllProducts() {
+  return window.ALL_PRODUCTS || DEFAULT_PRODUCTS;
+}
+
+/** Returns a decorative icon for a tier by name */
+function getTierIcon(name) {
+  switch (name) {
+    case "Miniature Relics":    return "🪶";
+    case "Tiny Treasures":      return "✨";
+    case "Little Miracles":     return "🍄";
+    case "Forgotten Treasures": return "🗝️";
+    case "Hidden Artifacts":    return "🌲";
+    case "Ancient Artifacts":   return "👑";
+    default:                    return "✦";
+  }
+}
+
+
+// ============================================================
+// Cart — storage & mutation
+// ============================================================
+
+function getCart() {
+  const stored = window.localStorage.getItem(CART_KEY);
+  if (!stored) return [];
+  try { return JSON.parse(stored); } catch (e) { return []; }
+}
+
+function saveCart(cart) {
+  window.localStorage.setItem(CART_KEY, JSON.stringify(cart));
+  renderCartCount();
+}
+
+function addToCart(id, quantity = 1) {
+  const cart = getCart();
+  const item = cart.find((entry) => entry.id === id);
+  if (item) {
+    item.quantity += quantity;
+  } else {
+    cart.push({ id, quantity });
+  }
+  saveCart(cart);
+  showToast("Added treasure to your Curiosity Cabinet.");
+}
+
+function removeFromCart(id) {
+  saveCart(getCart().filter((entry) => entry.id !== id));
+  renderCabinet();
+}
+
+function setCartQuantity(id, quantity) {
+  const cart = getCart();
+  const item = cart.find((entry) => entry.id === id);
+  if (!item) return;
+  item.quantity = Math.max(1, Number(quantity) || 1);
+  saveCart(cart);
+  renderCabinet();
+}
+
+/** Calculates the cart grand total using tier-aware prices */
+function getCartTotal(cart = getCart(), products = getAllProducts()) {
+  return cart.reduce((total, entry) => {
+    const product = products.find((item) => item.id === entry.id);
+    return product ? total + getProductPrice(product) * entry.quantity : total;
+  }, 0);
+}
+
+function isFreeShippingEligible(subtotal) {
+  return subtotal >= FREE_SHIPPING_THRESHOLD;
+}
+
+function getFreeShippingShortfall(subtotal) {
+  return Math.max(0, FREE_SHIPPING_THRESHOLD - subtotal);
+}
+
+function getAvailableShippingOptions(subtotal) {
+  if (isFreeShippingEligible(subtotal)) {
+    return [SHIPPING_OPTIONS["free-journey"]];
+  }
+  return [
+    SHIPPING_OPTIONS["royal-courier"],
+    SHIPPING_OPTIONS["royal-courier-tracked"]
+  ];
+}
+
+function getSelectedShippingId() {
+  const selected = document.querySelector("input[name='shipping-method']:checked");
+  return selected ? selected.value : "";
+}
+
+function resolveShippingOption(subtotal, selectedShippingId) {
+  const availableOptions = getAvailableShippingOptions(subtotal);
+  if (isFreeShippingEligible(subtotal)) {
+    return SHIPPING_OPTIONS["free-journey"];
+  }
+  return availableOptions.find((option) => option.id === selectedShippingId) || null;
+}
+
+function getCheckoutTotals(cart = getCart(), products = getAllProducts(), selectedShippingId = "") {
+  const subtotal       = getCartTotal(cart, products);
+  const shippingOption = resolveShippingOption(subtotal, selectedShippingId);
+  const shippingCost   = shippingOption ? shippingOption.price : 0;
+  return {
+    subtotal,
+    shippingOption,
+    shippingCost,
+    total: subtotal + shippingCost
+  };
+}
+
+/** Updates every .cart-count badge on the page */
+function renderCartCount() {
+  const count = getCart().reduce((sum, item) => sum + item.quantity, 0);
+  document.querySelectorAll(".cart-count").forEach((el) => {
+    el.textContent = count;
+  });
+}
+
+
+// ============================================================
+// Data loaders — each fetches a JSON file and caches globally
+// ============================================================
+
+async function loadProducts() {
+  try {
+    const response = await fetch(PRODUCTS_PATH, { cache: "no-store" });
+    if (!response.ok) throw new Error("Product list could not be loaded.");
+    const data = await response.json();
+    const products = Array.isArray(data)
+      ? data
+      : Array.isArray(data?.products) ? data.products : [];
+    if (!products.length) throw new Error("Product list is empty.");
+    window.ALL_PRODUCTS = products;
+    return products;
+  } catch (e) {
+    window.ALL_PRODUCTS = DEFAULT_PRODUCTS;
+    return DEFAULT_PRODUCTS;
+  }
+}
+
+async function loadCollections() {
+  try {
+    const response = await fetch(COLLECTIONS_PATH, { cache: "no-store" });
+    if (!response.ok) throw new Error("Collections could not be loaded.");
+    const data = await response.json();
+    const collections = Array.isArray(data)
+      ? data
+      : Array.isArray(data?.collections) ? data.collections : [];
+    const normalized = collections.slice().sort(
+      (a, b) => (Number(a.displayOrder) || 0) - (Number(b.displayOrder) || 0)
+    );
+    window.ALL_COLLECTIONS = normalized;
+    return normalized;
+  } catch (e) {
+    window.ALL_COLLECTIONS = DEFAULT_COLLECTIONS;
+    return DEFAULT_COLLECTIONS;
+  }
+}
+
+async function loadTiers() {
+  try {
+    const response = await fetch(TIERS_PATH, { cache: "no-store" });
+    if (!response.ok) throw new Error("Tiers could not be loaded.");
+    const data = await response.json();
+    const tiers = Array.isArray(data)
+      ? data
+      : Array.isArray(data?.tiers) ? data.tiers : [];
+    const normalized = tiers.slice().sort(
+      (a, b) => (Number(a.displayOrder) || 0) - (Number(b.displayOrder) || 0)
+    );
+    window.ALL_TIERS = normalized;
+    return normalized;
+  } catch (e) {
+    window.ALL_TIERS = DEFAULT_TIERS;
+    return DEFAULT_TIERS;
+  }
+}
+
+async function loadMerchantGuide() {
+  try {
+    const response = await fetch(MERCHANTS_GUIDE_PATH, { cache: "no-store" });
+    if (!response.ok) throw new Error("Merchant's Guide could not be loaded.");
+    const data = await response.json();
+    const normalized = (typeof data === "object" && data !== null)
+      ? data
+      : DEFAULT_MERCHANT_GUIDE;
+    normalized.merchantGuide = Array.isArray(normalized.merchantGuide)
+      ? normalized.merchantGuide.slice().sort(
+          (a, b) => (Number(a.displayOrder) || 0) - (Number(b.displayOrder) || 0)
+        )
+      : [];
+    window.ALL_MERCHANT_GUIDE = normalized;
+    return normalized;
+  } catch (e) {
+    window.ALL_MERCHANT_GUIDE = DEFAULT_MERCHANT_GUIDE;
+    return DEFAULT_MERCHANT_GUIDE;
+  }
+}
+
+async function loadSettings() {
+  try {
+    const response = await fetch(SETTINGS_PATH, { cache: "no-store" });
+    if (!response.ok) throw new Error("Settings could not be loaded.");
+    const data = await response.json();
+    const normalized = (typeof data === "object" && data !== null)
+      ? data
+      : DEFAULT_SETTINGS;
+    window.SETTINGS = {
+      ...DEFAULT_SETTINGS,
+      ...normalized,
+      shop:     { ...DEFAULT_SETTINGS.shop,     ...(normalized.shop     || {}) },
+      socials:  { ...DEFAULT_SETTINGS.socials,  ...(normalized.socials  || {}) },
+      contact:  { ...DEFAULT_SETTINGS.contact,  ...(normalized.contact  || {}) },
+      shipping: { ...DEFAULT_SETTINGS.shipping, ...(normalized.shipping || {}) },
+      website:  { ...DEFAULT_SETTINGS.website,  ...(normalized.website  || {}) },
+      branding: { ...DEFAULT_SETTINGS.branding, ...(normalized.branding || {}) }
+    };
+    return window.SETTINGS;
+  } catch (e) {
+    window.SETTINGS = DEFAULT_SETTINGS;
+    return DEFAULT_SETTINGS;
+  }
+}
+
+/**
+ * Fetches live inventory from the Netlify Function.
+ * On failure, returns an empty object so all products remain available.
+ * window.ALL_INVENTORY shape: { [productId]: { stock, lowStockThreshold, available, outOfStockMessage } }
+ */
+async function loadInventory() {
+  try {
+    const response = await fetch(INVENTORY_URL, { cache: "no-store" });
+    if (!response.ok) throw new Error("Inventory could not be loaded.");
+    const { inventory } = await response.json();
+    window.ALL_INVENTORY = (typeof inventory === "object" && inventory !== null) ? inventory : {};
+    return window.ALL_INVENTORY;
+  } catch (e) {
+    window.ALL_INVENTORY = {};
+    return {};
+  }
+}
+
+/**
+ * Returns the inventory entry for a product, or null if not tracked.
+ * When null, the product is treated as always available (unlimited stock).
+ */
+function getInventoryItem(productId) {
+  return (window.ALL_INVENTORY && window.ALL_INVENTORY[productId]) || null;
+}
+
+/**
+ * Returns true if a product is purchasable based on its inventory entry.
+ * Products with no inventory entry are considered always available.
+ */
+function isProductAvailable(productId) {
+  const inv = getInventoryItem(productId);
+  if (!inv) return true;                     /* not tracked → available */
+  if (inv.available === false) return false; /* manually disabled */
+  if (inv.stock === null) return true;       /* unlimited */
+  return inv.stock > 0;
+}
+
+/**
+ * Returns true if a product is low on stock (but still purchasable).
+ */
+function isProductLowStock(productId) {
+  const inv = getInventoryItem(productId);
+  if (!inv || inv.stock === null || inv.available === false) return false;
+  return inv.stock > 0 && inv.stock <= (inv.lowStockThreshold || 3);
+}
+
+/** Returns the themed out-of-stock message for a product */
+const OUT_OF_STOCK_MESSAGES = {
+  roaming:   "🕯️ The Merchant is roaming the land in search of this treasure.",
+  returning: "🌙 This treasure will return to the shelves before long.",
+  bespoke:   "✦ This treasure is available to order — Send Word to the Merchant."
+};
+
+function getOutOfStockMessage(productId) {
+  const inv = getInventoryItem(productId);
+  const key = inv?.outOfStockMessage || "roaming";
+  return OUT_OF_STOCK_MESSAGES[key] || OUT_OF_STOCK_MESSAGES.roaming;
+}
+
+
+// ============================================================
+// Global settings & branding rendering
+// ============================================================
+
+function updateFavicon(iconPath) {
+  if (!iconPath) return;
+  let favicon = document.querySelector('link[rel="icon"]');
+  if (!favicon) {
+    favicon = document.createElement("link");
+    favicon.rel  = "icon";
+    favicon.type = "image/png";
+    document.head.appendChild(favicon);
+  }
+  favicon.href = iconPath;
+}
+
+/** Injects the logo image (or placeholder) into every .site-logo container */
+function renderBranding() {
+  const settings = window.SETTINGS || DEFAULT_SETTINGS;
+  const branding = settings.branding || DEFAULT_SETTINGS.branding;
+  const logoPath = branding.logo;
+  const altText  = branding.altText || `${settings.shop.name} logo`;
+
+  document.querySelectorAll(".site-logo").forEach((container) => {
+    let image = container.querySelector(".site-logo-image");
+    const placeholder = container.querySelector(".site-logo-placeholder");
+
+    if (!image) {
+      image = document.createElement("img");
+      image.className = "site-logo-image";
+      container.appendChild(image);
+    }
+
+    image.src      = logoPath;
+    image.alt      = altText;
+    image.decoding = "async";
+
+    image.onload = () => {
+      container.classList.add("logo-loaded");
+      image.style.display = "block";
+      if (placeholder) placeholder.style.display = "none";
+    };
+    image.onerror = () => {
+      container.classList.remove("logo-loaded");
+      image.style.display = "none";
+      if (placeholder) placeholder.style.display = "grid";
+    };
+
+    if (placeholder) placeholder.textContent = "✦";
+  });
+
+  updateFavicon(branding.favicon);
+}
+
+/** Applies every setting from settings.json to matching elements across all pages */
+function renderGlobalSettings() {
+  const settings = window.SETTINGS || DEFAULT_SETTINGS;
+  const { name: shopName, tagline: shopTagline } = settings.shop;
+  const { instagram, instagramHandle }           = settings.socials;
+  const { contactPageTitle, submitButton }       = settings.contact;
+  const { shippingMessage, processingTime, shipsTo } = settings.shipping;
+  const shipsToList = Array.isArray(shipsTo) ? shipsTo : DEFAULT_SETTINGS.shipping.shipsTo;
+
+  document.querySelectorAll(".site-brand-name").forEach((el) => { el.textContent = shopName; });
+  document.querySelectorAll(".site-tagline").forEach((el)    => { el.textContent = shopTagline; });
+  document.querySelectorAll(".site-copyright").forEach((el)  => { el.textContent = `© ${shopName}`; });
+
+  document.querySelectorAll(".social-instagram-link").forEach((el) => {
+    el.href        = instagram;
+    el.textContent = instagramHandle;
+  });
+
+  document.querySelectorAll(".contact-page-title").forEach((el) => { el.textContent = contactPageTitle; });
+  document.querySelectorAll(".contact-submit-button").forEach((btn) => {
+    if (btn.tagName === "INPUT") { btn.value = submitButton; } else { btn.textContent = submitButton; }
+  });
+
+  document.querySelectorAll(".shipping-message").forEach((el) => { el.textContent = shippingMessage; });
+  document.querySelectorAll(".shipping-details").forEach((el) => {
+    el.textContent = `${processingTime}. Ships to: ${shipsToList.join(", ")}.`;
+  });
+
+  renderBranding();
+
+  if (settings.shop?.language) document.documentElement.lang = settings.shop.language;
+
+  if (document.title) {
+    const friendly = document.title.replace(/\s*\|\s*.*$/, "") || document.body.dataset.page || "";
+    document.title = `${friendly} | ${shopName}`;
+  }
+}
+
+
+// ============================================================
+// Product gallery (product detail page)
+// ============================================================
+
+function loadProductGallery(product) {
+  const gallery = document.querySelector(".product-gallery");
+  if (!gallery) return;
+
+  const imageFiles = Array.isArray(product.images) && product.images.length
+    ? product.images : [];
+  const folder      = `${IMAGE_ROOT}/${product.id}`;
+  const placeholder = `<div class="image-placeholder">A photograph of this treasure will appear soon.</div>`;
+
+  gallery.innerHTML = placeholder;
+  if (!imageFiles.length) return;
+
+  const loaded = [];
+  let processed = 0;
+
+  function finishGallery() {
+    gallery.innerHTML = loaded.length
+      ? loaded.map((src) => `<div class="gallery-item"><img src="${src}" alt="${product.name}"></div>`).join("")
+      : placeholder;
+  }
+
+  imageFiles.forEach((file) => {
+    const imageUrl = `${folder}/${file}`;
+    const img = new Image();
+    img.onload  = () => { loaded.push(imageUrl); processed++; if (processed === imageFiles.length) finishGallery(); };
+    img.onerror = () => { processed++;            if (processed === imageFiles.length) finishGallery(); };
+    img.src = imageUrl;
+  });
+}
+
+
+// ============================================================
+// Product cards
+// ============================================================
+
+/** Builds the HTML string for a single product card */
+function buildProductCard(product) {
+  const hasImage     = Array.isArray(product.images) && product.images.length;
+  const imageSrc     = hasImage ? `${IMAGE_ROOT}/${product.id}/${product.images[0]}` : null;
+  const description  = product.description || "Bracelet details will be added soon.";
+  const displayPrice = formatPrice(getProductPrice(product));
+
+  const available  = isProductAvailable(product.id);
+  const lowStock   = available && isProductLowStock(product.id);
+
+  const addButton = available
+    ? `<button class="button button-secondary" type="button" data-add-to-cart="${product.id}">Add to Cabinet</button>`
+    : `<button class="button button-secondary" type="button" disabled style="opacity:0.55;cursor:not-allowed;">Out of Stock</button>`;
+
+  const stockNotice = !available
+    ? `<p class="stock-notice stock-notice--out">${getOutOfStockMessage(product.id)}</p>`
+    : lowStock
+    ? `<p class="stock-notice stock-notice--low">⚠️ Only a few treasures remain.</p>`
+    : "";
+
+  return `
+    <article class="card product-card">
+      <div class="product-image">
+        ${hasImage
+          ? `<img src="${imageSrc}" alt="${product.name}"
+               onload="this.parentElement.querySelector('.image-placeholder-card')?.style.display='none';"
+               onerror="this.style.display='none';">`
+          : ""}
+        <div class="image-placeholder-card">A photograph of this treasure will appear soon.</div>
+      </div>
+      <div class="product-icon">${product.icon || "✦"}</div>
+      <div class="product-copy">
+        <h3>${product.name}</h3>
+        <p>${description}</p>
+        <div class="product-meta">
+          <span class="muted">${product.tier}</span>
+          <span>${product.collection}</span>
+          <span>${displayPrice}</span>
+        </div>
+        ${stockNotice}
+      </div>
+      <div class="product-actions">
+        <a class="button button-primary" href="product.html?id=${encodeURIComponent(product.id)}">View Treasure</a>
+        ${addButton}
+      </div>
+    </article>
+  `;
+}
+
+function attachAddToCartHandlers(root = document) {
+  root.querySelectorAll("[data-add-to-cart]").forEach((button) => {
+    button.addEventListener("click", () => addToCart(button.dataset.addToCart));
+  });
+}
+
+function renderProductsGrid(products, selector) {
+  const grid = document.querySelector(selector);
+  if (!grid) return;
+  grid.innerHTML = products.map(buildProductCard).join("");
+  attachAddToCartHandlers(grid);
+}
+
+
+// ============================================================
+// Cart rows — shared by cabinet and checkout
+// ============================================================
+
+/**
+ * Builds the HTML for a single editable cart row.
+ * Used by renderCabinet(); the checkout page uses a read-only layout.
+ */
+function buildCartRow(entry, product) {
+  const itemPrice = getProductPrice(product);
+  return `
+    <div class="cart-row">
+      <div>
+        <h3>${product.name}</h3>
+        <p>${product.collection}</p>
+        <p class="muted">${product.description || "Bracelet details will be added soon."}</p>
+      </div>
+      <div class="cart-quantity">
+        <label for="qty-${product.id}">Qty</label>
+        <input id="qty-${product.id}" type="number" min="1" value="${entry.quantity}" data-quantity="${product.id}">
+      </div>
+      <div class="cart-price">${formatPrice(itemPrice * entry.quantity)}</div>
+      <div>
+        <button class="button button-secondary" type="button" data-remove="${product.id}">Remove</button>
+      </div>
+    </div>
+  `;
+}
+
+/** Wires quantity-change and remove-item listeners on cart rows inside a container */
+function attachCartRowHandlers(container) {
+  container.querySelectorAll("[data-quantity]").forEach((input) => {
+    input.addEventListener("change", () => setCartQuantity(input.dataset.quantity, input.value));
+  });
+  container.querySelectorAll("[data-remove]").forEach((button) => {
+    button.addEventListener("click", () => removeFromCart(button.dataset.remove));
+  });
+}
+
+
+// ============================================================
+// Page renderers
+// ============================================================
+
+function renderHomePage(products) {
+  // Collections preview strip
+  const collectionsArea = document.querySelector(".collection-preview-grid");
+  if (collectionsArea && window.ALL_COLLECTIONS?.length) {
+    collectionsArea.innerHTML = window.ALL_COLLECTIONS
+      .map((c) => `
+        <article class="card collection-card" style="border-top:4px solid ${c.colourTheme || "#ccc"}">
+          <div class="collection-icon">${c.icon || "✦"}</div>
+          <h3>${c.name}</h3>
+          <p>${c.shortDescription || ""}</p>
+          <a class="button button-primary" href="collections.html?collection=${encodeURIComponent(c.name)}">Explore</a>
+        </article>
+      `)
+      .join("");
+  }
+
+  // Tier preview strip
+  const tierPreviewArea = document.querySelector(".tier-preview-grid");
+  if (tierPreviewArea && window.ALL_TIERS?.length) {
+    tierPreviewArea.innerHTML = window.ALL_TIERS
+      .map((tier) => `
+        <article class="card tier-card">
+          <div class="tier-icon">${getTierIcon(tier.name)}</div>
+          <h3>${tier.name}</h3>
+          <p>${formatPrice(tier.price)} · ${tier.includes?.[0] || "Discover the right level of wonder."}</p>
+          <a class="button button-primary" href="tiers.html?tier=${encodeURIComponent(tier.name)}">Discover</a>
+        </article>
+      `)
+      .join("");
+  }
+
+  // Featured products
+  const featuredArea = document.querySelector(".featured-grid");
+  if (!featuredArea) return;
+  featuredArea.innerHTML = products.slice(0, 3).map(buildProductCard).join("");
+  attachAddToCartHandlers(featuredArea);
+}
+
+function renderShopPage(products) {
+  const collectionFilter = document.querySelector("#collection-filter");
+  const tierFilter       = document.querySelector("#tier-filter");
+  const searchInput      = document.querySelector("#product-search");
+
+  const allCollections = window.ALL_COLLECTIONS?.length
+    ? window.ALL_COLLECTIONS.map((c) => c.name).sort()
+    : Array.from(new Set(products.map((p) => p.collection))).sort();
+
+  const allTiers = window.ALL_TIERS?.length
+    ? window.ALL_TIERS.map((t) => t.name)
+    : Array.from(new Set(products.map((p) => p.tier))).sort();
+
+  if (collectionFilter) {
+    allCollections.forEach((name) => {
+      const opt = document.createElement("option");
+      opt.value = name; opt.textContent = name;
+      collectionFilter.appendChild(opt);
+    });
+  }
+
+  if (tierFilter) {
+    allTiers.forEach((name) => {
+      const opt = document.createElement("option");
+      opt.value = name; opt.textContent = name;
+      tierFilter.appendChild(opt);
+    });
+  }
+
+  function filterProducts() {
+    const collectionValue = collectionFilter?.value || "";
+    const tierValue       = tierFilter?.value       || "";
+    const searchValue     = searchInput?.value.trim().toLowerCase() || "";
+
+    const filtered = products.filter((p) => {
+      const matchesCollection = !collectionValue || p.collection === collectionValue;
+      const matchesTier       = !tierValue       || p.tier === tierValue;
+      const matchesSearch     = !searchValue     ||
+        p.name.toLowerCase().includes(searchValue) ||
+        p.description?.toLowerCase().includes(searchValue) ||
+        p.collection.toLowerCase().includes(searchValue);
+      return matchesCollection && matchesTier && matchesSearch;
+    });
+
+    renderProductsGrid(filtered, ".product-grid");
+    const counter = document.querySelector("#shop-results-count");
+    if (counter) counter.textContent = filtered.length;
+  }
+
+  if (collectionFilter) collectionFilter.addEventListener("change", filterProducts);
+  if (tierFilter)       tierFilter.addEventListener("change", filterProducts);
+  if (searchInput)      searchInput.addEventListener("input", filterProducts);
+
+  filterProducts();
+}
+
+function renderCollectionsPage(products) {
+  const selectedCollection = getQueryParam("collection");
+  const listContainer      = document.querySelector(".collections-grid");
+  const collectionIntro    = document.querySelector(".collections-intro");
+  const productArea        = document.querySelector(".collection-products");
+
+  const collections = window.ALL_COLLECTIONS?.length ? window.ALL_COLLECTIONS : [
+    { name: "Haunted Love",        description: "Love stories that linger beyond time.", icon: "🖤" },
+    { name: "Enchanted Forest",    description: "Woodland magic hidden beneath ancient trees.", icon: "🍄" },
+    { name: "Forgotten Treasures", description: "Relics and ancient mysteries waiting to be uncovered.", icon: "🗝️" },
+    { name: "Little Miracles",     description: "Small reminders that hope can bloom in unexpected places.", icon: "✨" }
+  ];
+
+  if (collections[0]?.displayOrder !== undefined) {
+    collections.sort((a, b) => (Number(a.displayOrder) || 0) - (Number(b.displayOrder) || 0));
+  }
+
+  if (!selectedCollection) {
+    if (!listContainer) return;
+    listContainer.innerHTML = collections
+      .map((col) => {
+        const count = products.filter((p) => p.collection === col.name).length;
+        return `
+          <article class="card collection-card">
+            <div class="collection-icon">${col.icon}</div>
+            <h3>${col.name}</h3>
+            <p>${col.shortDescription || col.description || ""}</p>
+            <p class="collection-count">${count} treasures awaiting discovery</p>
+            <a class="button button-primary" href="collections.html?collection=${encodeURIComponent(col.name)}">Explore</a>
+          </article>
+        `;
+      })
+      .join("");
+    return;
+  }
+
+  const collectionMeta = collections.find(
+    (c) => c.name === selectedCollection || c.id === selectedCollection
+  ) || { icon: "✦", fullDescription: selectedCollection };
+
+  if (collectionIntro) {
+    collectionIntro.innerHTML = `
+      <div class="card collection-banner" style="display:flex;gap:20px;align-items:center;">
+        <div class="collection-icon" style="font-size:2rem;">${collectionMeta.icon}</div>
+        <div>
+          <h2>${collectionMeta.name || selectedCollection}</h2>
+          <p class="muted">${collectionMeta.fullDescription || collectionMeta.shortDescription || selectedCollection}</p>
+        </div>
+      </div>
+    `;
+  }
+
+  const filtered = products.filter((p) => p.collection === selectedCollection);
+  if (!productArea) return;
+
+  if (!filtered.length) {
+    productArea.innerHTML = `
+      <div class="callout">
+        <h3>The Merchant is still uncovering treasures for this collection...</h3>
+      </div>
+    `;
+    return;
+  }
+
+  productArea.innerHTML = `
+    <div class="collection-actions">
+      <a class="button button-secondary" href="collections.html">Browse all collections</a>
+      <span>${filtered.length} treasures in ${selectedCollection}</span>
+    </div>
+    <div class="product-grid">${filtered.map(buildProductCard).join("")}</div>
+  `;
+  attachAddToCartHandlers(productArea);
+}
+
+function renderTiersPage(products) {
+  const selectedTier  = getQueryParam("tier");
+  const listContainer = document.querySelector(".tiers-grid");
+  const tierIntro     = document.querySelector(".tiers-intro");
+  const productArea   = document.querySelector(".tier-products");
+  const tiers         = window.ALL_TIERS?.length ? window.ALL_TIERS : [];
+
+  if (!selectedTier) {
+    if (!tierIntro || !listContainer) return;
+    tierIntro.innerHTML = `<h2>✦ Treasure Tiers ✦</h2><p>Choose the tier that matches your mood and discover the right level of wonder.</p>`;
+
+    listContainer.innerHTML = tiers
+      .map((tier) => {
+        const examples = tier.exampleBracelets?.length
+          ? tier.exampleBracelets.map((name) => {
+              const product = products.find((p) => p.name === name);
+              return product
+                ? `<li><a href="product.html?id=${encodeURIComponent(product.id)}">${product.name}</a></li>`
+                : `<li>${name}</li>`;
+            }).join("")
+          : "";
+        const exampleHtml = examples ? `<ul>${examples}</ul>` : "<p>None yet</p>";
+
+        return `
+          <article class="card tier-card">
+            <div style="display:flex;gap:18px;align-items:center;margin-bottom:12px;">
+              <div class="tier-icon" style="font-size:1.6rem;">${getTierIcon(tier.name)}</div>
+              <div>
+                <h3>${tier.name}</h3>
+                <p class="muted">Price: ${formatPrice(tier.price)}</p>
+              </div>
+            </div>
+            <h4>What's included</h4>
+            <ul>${tier.includes.map((i) => `<li>${i}</li>`).join("")}</ul>
+            <h4>Example Bracelet</h4>
+            ${exampleHtml}
+            ${tier.packaging ? `<h4>Packaging</h4><p class="muted">${tier.packaging}</p>` : ""}
+          </article>
+        `;
+      })
+      .join("");
+    return;
+  }
+
+  const selectedMeta = tiers.find((t) => t.name === selectedTier || t.id === selectedTier) || { name: selectedTier };
+  if (tierIntro) {
+    tierIntro.innerHTML = `<h2>${selectedMeta.name}</h2><p>Goods gathered from the ${selectedMeta.name} tier.</p>`;
+  }
+
+  const filtered = products.filter((p) => p.tier === selectedTier);
+  if (!productArea) return;
+
+  if (!filtered.length) {
+    productArea.innerHTML = `<p class="callout">No treasures found in ${selectedTier}. Please explore other tiers or return to the tiers list.</p>`;
+    return;
+  }
+
+  productArea.innerHTML = `
+    <div class="collection-actions">
+      <a class="button button-secondary" href="tiers.html">Browse all treasure tiers</a>
+      <span>${filtered.length} treasures in ${selectedTier}</span>
+    </div>
+    <div class="product-grid">${filtered.map(buildProductCard).join("")}</div>
+  `;
+  attachAddToCartHandlers(productArea);
+}
+
+function renderProductPage(products) {
+  const id         = getQueryParam("id");
+  const product    = products.find((item) => item.id === id);
+  const detailArea = document.querySelector(".product-detail");
+  if (!detailArea) return;
+
+  if (!product) {
+    detailArea.innerHTML = `<div class="callout">Treasure not found. <a href="shop.html">Return to the shop</a>.</div>`;
+    return;
+  }
+
+  const tierMeta      = getTierMeta(product.tier);
+  const displayPrice  = formatPrice(getProductPrice(product));
+  const packagingText = tierMeta?.packaging || product.packaging || "Standard Handmade Packaging";
+  const available     = isProductAvailable(product.id);
+  const lowStock      = available && isProductLowStock(product.id);
+
+  const stockNotice = !available
+    ? `<p class="stock-notice stock-notice--out">${getOutOfStockMessage(product.id)}</p>`
+    : lowStock
+    ? `<p class="stock-notice stock-notice--low">⚠️ Only a few treasures remain.</p>`
+    : "";
+
+  const addCabinetButton = available
+    ? `<button class="button button-primary" type="button" id="add-to-cabinet">Add to Curiosity Cabinet</button>`
+    : `<button class="button button-primary" type="button" disabled style="opacity:0.55;cursor:not-allowed;">Out of Stock</button>`;
+
+  detailArea.innerHTML = `
+    <article class="card product-detail-card">
+      <div class="product-detail-primary">
+        <div class="product-detail-main">
+          <div class="product-gallery"></div>
+          <div>
+            <p class="eyebrow">${product.collection}</p>
+            <h2>${product.name}</h2>
+            <p class="price-detail">${displayPrice}</p>
+            <p>${product.description || "Description will be added soon."}</p>
+            ${stockNotice}
+            <p class="availability">${available ? "Available" : "Currently unavailable"}</p>
+          </div>
+        </div>
+        <div class="product-detail-meta">
+          <h3>✦ The Story Behind This Treasure ✦</h3>
+          <p>${product.lore}</p>
+          <h3>Description</h3>
+          <p>${product.description}</p>
+          <h3>Materials</h3>
+          <ul>${product.materials.map((m) => `<li>${m}</li>`).join("")}</ul>
+          <h3>Packaging</h3>
+          <p>${packagingText}</p>
+          <div class="detail-actions">
+            ${addCabinetButton}
+            <a class="button button-secondary" href="cabinet.html">View Cabinet</a>
+          </div>
+        </div>
+      </div>
+    </article>
+  `;
+
+  loadProductGallery(product);
+
+  if (available) {
+    const addButton = document.querySelector("#add-to-cabinet");
+    if (addButton) addButton.addEventListener("click", () => addToCart(product.id));
+  }
+}
+
+/**
+ * Renders the Curiosity Cabinet page.
+ * Reads products from the global cache so removeFromCart/setCartQuantity
+ * can call this without needing to pass a products argument.
+ */
+function renderCabinet() {
+  const container    = document.querySelector(".cart-items");
+  const totalElement = document.querySelector("#cart-total");
+  if (!container) return;
+
+  const cart     = getCart();
+  const products = getAllProducts();
+
+  if (!cart.length) {
+    container.innerHTML = `
+      <div class="callout">
+        <h3>Your Curiosity Cabinet is empty.</h3>
+        <p>Fill it with handmade treasures from the shop.</p>
+        <a class="button button-primary" href="shop.html">Browse Treasures</a>
+      </div>
+    `;
+    if (totalElement) totalElement.textContent = formatPrice(0);
+    return;
+  }
+
+  container.innerHTML = cart
+    .map((entry) => {
+      const product = products.find((item) => item.id === entry.id);
+      return product ? buildCartRow(entry, product) : "";
+    })
+    .join("");
+
+  if (totalElement) totalElement.textContent = formatPrice(getCartTotal(cart, products));
+
+  attachCartRowHandlers(container);
+}
+
+/**
+ * Renders the checkout page with a read-only order summary and a Stripe button.
+ * The page must have data-page="checkout" on <body>.
+ */
+function renderCheckoutPage() {
+  const summaryContainer = document.querySelector(".checkout-summary");
+  const shippingContainer = document.querySelector("#checkout-shipping-options");
+  const subtotalElement  = document.querySelector("#checkout-subtotal");
+  const shippingElement  = document.querySelector("#checkout-shipping-cost");
+  const totalElement     = document.querySelector("#checkout-total");
+  const checkoutButton   = document.querySelector("#checkout-button");
+  if (!summaryContainer) return;
+
+  const cart     = getCart();
+  const products = getAllProducts();
+
+  if (!cart.length) {
+    summaryContainer.innerHTML = `
+      <div class="callout">
+        <h3>Your Curiosity Cabinet is empty.</h3>
+        <p>There is nothing to check out. <a href="shop.html">Return to the shop</a>.</p>
+      </div>
+    `;
+    if (checkoutButton) checkoutButton.disabled = true;
+    if (shippingContainer) {
+      shippingContainer.innerHTML = "";
+    }
+    if (subtotalElement) subtotalElement.textContent = formatPrice(0);
+    if (shippingElement) shippingElement.textContent = formatPrice(0);
+    if (totalElement) totalElement.textContent = formatPrice(0);
+    return;
+  }
+
+  // Read-only order summary — no quantity editing on the checkout page
+  summaryContainer.innerHTML = cart
+    .map((entry) => {
+      const product = products.find((item) => item.id === entry.id);
+      if (!product) return "";
+      const itemPrice = getProductPrice(product);
+      return `
+        <div class="checkout-row">
+          <div class="checkout-row-name">
+            <strong>${product.name}</strong>
+            <span class="muted">${product.collection}</span>
+          </div>
+          <div class="checkout-row-qty">× ${entry.quantity}</div>
+          <div class="checkout-row-price">${formatPrice(itemPrice * entry.quantity)}</div>
+        </div>
+      `;
+    })
+    .join("");
+
+  const subtotal = getCartTotal(cart, products);
+  const shippingOptions = getAvailableShippingOptions(subtotal);
+
+  if (shippingContainer) {
+    const optionsHtml = shippingOptions.map((option) => {
+      const checked = option.id === "free-journey" ? " checked" : "";
+      const helperText = option.id === "free-journey"
+        ? `<p class="muted">${option.eta}</p>`
+        : `<p class="muted">${option.eta}</p>`;
+      return `
+        <label class="form-group" style="display:block;margin-bottom:12px;cursor:pointer;">
+          <input type="radio" name="shipping-method" value="${option.id}"${checked} style="margin-right:10px;">
+          <strong>${option.name}</strong>
+          <span class="muted" style="margin-left:8px;">${formatPrice(option.price)}</span>
+          ${helperText}
+        </label>
+      `;
+    }).join("");
+
+    const freeShippingShortfall = getFreeShippingShortfall(subtotal);
+    const freeNote = isFreeShippingEligible(subtotal)
+      ? `<p class="muted" style="margin-top:8px;">✨ Congratulations! The Merchant has granted your treasures a Free Journey.</p>`
+      : freeShippingShortfall <= 5
+      ? `<p class="muted" style="margin-top:8px;">🕯️ Only ${formatPrice(freeShippingShortfall)} more stands between your treasures and a Free Journey.</p>`
+      : `<p class="muted" style="margin-top:8px;">🍄 Gather ${formatPrice(freeShippingShortfall)} more in curious treasures to earn a Free Journey.</p>`;
+
+    shippingContainer.innerHTML = `${optionsHtml}${freeNote}`;
+  }
+
+  function syncCheckoutTotals() {
+    const totals = getCheckoutTotals(cart, products, getSelectedShippingId());
+    if (subtotalElement) subtotalElement.textContent = formatPrice(totals.subtotal);
+    if (shippingElement) shippingElement.textContent = formatPrice(totals.shippingCost);
+    if (totalElement) totalElement.textContent = formatPrice(totals.total);
+    if (checkoutButton) checkoutButton.disabled = !totals.shippingOption;
+  }
+
+  document.querySelectorAll("input[name='shipping-method']").forEach((input) => {
+    input.addEventListener("change", syncCheckoutTotals);
+  });
+
+  syncCheckoutTotals();
+
+  if (checkoutButton) {
+    checkoutButton.addEventListener("click", () => initiateStripeCheckout(cart, products));
+  }
+}
+
+/**
+ * Posts the cart to the Netlify Function and redirects to Stripe Checkout.
+ *
+ * The function receives line items (name, price in decimal GBP, quantity),
+ * creates a Stripe Checkout Session server-side, and returns a hosted
+ * payment URL. The browser then navigates to that URL.
+ */
+async function initiateStripeCheckout(cart, products) {
+  const button = document.querySelector("#checkout-button");
+  const selectedShippingId = getSelectedShippingId();
+  const totals = getCheckoutTotals(cart, products, selectedShippingId);
+
+  // Disable the button and show a loading message while the request is in flight
+  if (button) {
+    button.disabled    = true;
+    button.textContent = "🕯️ Preparing your treasures...";
+  }
+
+  // Guard: products must be loaded from the JSON catalogue
+  if (!products || !products.length) {
+    console.error("Stripe checkout: product catalogue not loaded yet.");
+    showToast("Still loading your treasures — please try again in a moment.");
+    if (button) { button.disabled = false; button.textContent = "🕯️ Proceed to Secure Payment"; }
+    return;
+  }
+
+  if (!totals.shippingOption) {
+    showToast("Please choose how the Merchant should send your treasure.");
+    if (button) { button.disabled = false; button.textContent = "🕯️ Proceed to Secure Payment"; }
+    return;
+  }
+
+  // Build the line items array the Netlify Function expects
+  const lineItems = cart
+    .map((entry) => {
+      const product = products.find((p) => p.id === entry.id);
+      if (!product) return null;
+      const price = getProductPrice(product);
+      if (!price || price <= 0) {
+        console.warn(`Stripe checkout: skipping "${product.name}" — price resolved to 0.`);
+        return null;
+      }
+      return {
+        productId: product.id,  // embedded in session metadata for webhook stock decrement
+        name:      product.name,
+        price,            // decimal GBP, e.g. 4.50 — converted to pence in the Netlify Function
+        quantity:  entry.quantity
+      };
+    })
+    .filter(Boolean);
+
+  if (!lineItems.length) {
+    showToast("Your Curiosity Cabinet appears to be empty.");
+    if (button) { button.disabled = false; button.textContent = "🕯️ Proceed to Secure Payment"; }
+    return;
+  }
+
+  try {
+    const response = await fetch("/.netlify/functions/create-checkout-session", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        lineItems,
+        shippingMethod: totals.shippingOption.id,
+        successUrl: `${window.location.origin}/success.html`,
+        cancelUrl:  `${window.location.origin}/checkout.html`
+      })
+    });
+
+    // Log status so any error is visible in the browser console
+    console.log("Checkout session response status:", response.status);
+
+    if (!response.ok) {
+      const text = await response.text();
+      console.error("Checkout session error body:", text);
+      let message = "The Merchant's counter is temporarily unavailable.";
+      try { message = JSON.parse(text).error || message; } catch (e) { /* plain text error */ }
+      throw new Error(message);
+    }
+
+    const { url } = await response.json();
+    window.location.href = url;
+
+  } catch (error) {
+    console.error("Stripe checkout error:", error.message);
+    showToast(error.message || "Something went wrong. Please try again in a moment.");
+    if (button) {
+      button.disabled    = false;
+      button.textContent = "🕯️ Proceed to Secure Payment";
+    }
+  }
+}
+
+
+// ============================================================
+// Contact page
+// ============================================================
+
+async function renderContactPage() {
+  const form    = document.querySelector("#contact-form");
+  const message = document.querySelector(".contact-message");
+  if (!form || !message) return;
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    const name    = form.querySelector("#contact-name").value.trim();
+    const email   = form.querySelector("#contact-email").value.trim();
+    const subject = form.querySelector("#contact-subject").value.trim();
+    const note    = form.querySelector("#contact-message-text").value.trim();
+
+    if (!name || !email || !subject || !note) {
+      message.textContent = "Please fill in all fields before sending your letter.";
+      return;
+    }
+
+    message.textContent = "🕊️ Delivering your letter to the Merchant...";
+
+    try {
+      const response = await fetch(form.action, {
+        method:  "POST",
+        body:    new FormData(form),
+        headers: { Accept: "application/json" }
+      });
+
+      if (response.ok) {
+        window.location.href = "letter-delivered.html";
+      } else {
+        console.log("Formspree error:", await response.text());
+        message.textContent = "Something went wrong while sending your letter. Please try again.";
+      }
+    } catch (error) {
+      console.error(error);
+      message.textContent = "The courier seems to have misplaced your letter. Please try again in a moment.";
+    }
+  });
+}
+
+
+// ============================================================
+// Merchant's Guide page — accordion
+// ============================================================
+
+function openFaqCard(card) {
+  const answer = card.querySelector(".faq-answer");
+  const button = card.querySelector(".faq-question");
+  if (!answer || !button) return;
+  card.classList.add("open");
+  button.setAttribute("aria-expanded", "true");
+  answer.setAttribute("aria-hidden", "false");
+  answer.style.maxHeight = `${answer.scrollHeight + 24}px`;
+}
+
+function closeFaqCard(card) {
+  const answer = card.querySelector(".faq-answer");
+  const button = card.querySelector(".faq-question");
+  if (!answer || !button) return;
+  card.classList.remove("open");
+  button.setAttribute("aria-expanded", "false");
+  answer.setAttribute("aria-hidden", "true");
+  answer.style.maxHeight = "0px";
+}
+
+function renderMerchantGuidePage() {
+  const guide         = window.ALL_MERCHANT_GUIDE || DEFAULT_MERCHANT_GUIDE;
+  const titleEl       = document.querySelector(".merchant-guide-title");
+  const subtitleEl    = document.querySelector(".merchant-guide-subtitle");
+  const listContainer = document.querySelector(".merchant-guide-list");
+
+  if (titleEl)    titleEl.textContent    = guide.title    || DEFAULT_MERCHANT_GUIDE.title;
+  if (subtitleEl) subtitleEl.textContent = guide.subtitle || DEFAULT_MERCHANT_GUIDE.subtitle;
+  if (!listContainer) return;
+
+  listContainer.innerHTML = guide.merchantGuide
+    .map((item) => `
+      <article class="card faq-card" id="faq-${item.id}">
+        <button type="button" class="faq-question"
+                aria-expanded="false"
+                aria-controls="answer-${item.id}"
+                data-faq="${item.id}">
+          <span>${item.question}</span>
+          <span class="faq-icon" aria-hidden="true">+</span>
+        </button>
+        <div class="faq-answer" id="answer-${item.id}" aria-hidden="true">
+          <p>${item.answer}</p>
+        </div>
+      </article>
+    `)
+    .join("");
+
+  const faqCards = listContainer.querySelectorAll(".faq-card");
+  listContainer.querySelectorAll(".faq-question").forEach((button) => {
+    button.addEventListener("click", () => {
+      const card   = button.closest(".faq-card");
+      if (!card) return;
+      const isOpen = card.classList.contains("open");
+      faqCards.forEach(closeFaqCard);
+      if (!isOpen) openFaqCard(card);
+    });
+  });
+}
+
+
+// ============================================================
+// Toast notification
+// ============================================================
+
+function showToast(text) {
+  let toast = document.querySelector(".toast-notice");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.className = "toast-notice";
+    document.body.appendChild(toast);
+  }
+  toast.textContent = text;
+  toast.classList.add("visible");
+  window.clearTimeout(window.toastTimeout);
+  window.toastTimeout = window.setTimeout(() => toast.classList.remove("visible"), 2500);
+}
+
+
+// ============================================================
+// Navigation helpers
+// ============================================================
+
+function highlightCurrentPage() {
+  const path = window.location.pathname.split("/").pop();
+  document.querySelectorAll(".nav-links a").forEach((link) => {
+    if (link.getAttribute("href") === path) link.classList.add("active");
+  });
+}
+
+
+// ============================================================
+// Initialisation — loads all data then routes to the page renderer
+// ============================================================
+
+function initPage() {
+  const pageId = document.body.dataset.page;
+
+  Promise.all([
+    loadSettings(),
+    loadProducts(),
+    loadCollections(),
+    loadTiers(),
+    loadMerchantGuide(),
+    loadInventory()        /* fetch live stock levels before rendering any products */
+  ]).then(([settings, products]) => {
+    renderGlobalSettings();
+    renderCartCount();
+    highlightCurrentPage();
+
+    switch (pageId) {
+      case "home":           renderHomePage(products);         break;
+      case "shop":           renderShopPage(products);         break;
+      case "collections":    renderCollectionsPage(products);  break;
+      case "tiers":          renderTiersPage(products);        break;
+      case "product":        renderProductPage(products);      break;
+      case "cabinet":        renderCabinet();                  break;
+      case "checkout":       renderCheckoutPage();             break;
+      case "contact":        renderContactPage();              break;
+      case "merchant-guide": renderMerchantGuidePage();        break;
+      default: break;
+    }
+  });
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  initPage();
+
+  // Mobile navigation toggle
+  const menuButton = document.querySelector(".menu-toggle");
+  const navigation = document.querySelector(".nav-links");
+
+  if (menuButton && navigation) {
+    menuButton.addEventListener("click", () => {
+      navigation.classList.toggle("show");
+      menuButton.textContent = navigation.classList.contains("show") ? "✕" : "☰";
+    });
+
+    navigation.querySelectorAll("a").forEach((link) => {
+      link.addEventListener("click", () => {
+        navigation.classList.remove("show");
+        menuButton.textContent = "☰";
+      });
+    });
+  }
+});

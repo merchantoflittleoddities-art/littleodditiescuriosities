@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Treasure Dispatched</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body data-page="success">
+
+  <header class="site-header">
+    <div class="inner-wrap">
+      <a class="brand" href="index.html">
+        <div class="site-logo" aria-hidden="true">
+          <img class="site-logo-image" src="" alt="">
+          <div class="site-logo-placeholder" aria-hidden="true">✦</div>
+        </div>
+        <div>
+          <p class="eyebrow site-brand-name"></p>
+          <h1>Treasure Dispatched</h1>
+        </div>
+      </a>
+      <nav class="nav-links">
+        <a href="index.html">Home</a>
+        <a href="shop.html">Shop</a>
+        <a href="collections.html">Collections</a>
+        <a href="tiers.html">Treasure Tiers</a>
+        <a href="about.html">Meet the Merchant</a>
+        <a href="reviews.html">Traveller Reviews</a>
+        <a href="merchants-guide.html">Merchant's Guide</a>
+        <a href="contact.html">Send Word to the Merchant</a>
+        <a href="cabinet.html">Curiosity Cabinet <span class="cart-count">0</span></a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="page-content">
+
+    <section class="section-intro">
+
+      <div class="card" style="text-align:center; padding: 3rem 2rem; max-width: 600px; margin: 0 auto;">
+
+        <p style="font-size: 3rem; margin-bottom: 1rem;">🕯️</p>
+
+        <h2>Your treasure is on its way.</h2>
+
+        <p>
+          The Merchant has received your order and is carefully preparing your treasure
+          for its journey. You will receive a confirmation shortly.
+        </p>
+
+        <p class="muted">
+          ✦ Thank you for visiting Little Oddities Curiosities ✦
+        </p>
+
+        <div style="margin-top: 2rem; display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+          <a class="button button-primary" href="shop.html">Discover More Treasures</a>
+          <a class="button button-secondary" href="index.html">Return Home</a>
+        </div>
+
+      </div>
+
+    </section>
+
+  </main>
+
+  <footer class="site-footer">
+    <div class="inner-wrap">
+      <p>Every treasure has a story ✦</p>
+      <p>Instagram: <a class="social-instagram-link" href="#" target="_blank" rel="noreferrer"></a></p>
+      <p class="site-copyright"></p>
+    </div>
+  </footer>
+
+  <script src="script.js" defer></script>
+
+  <!-- Clear the cart once payment is confirmed so it cannot be submitted twice -->
+  <script>
+    localStorage.removeItem("littleOdditiesCabinet");
+  </script>
+
+</body>
+</html>

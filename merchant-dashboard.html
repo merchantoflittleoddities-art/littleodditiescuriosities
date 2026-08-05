@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Merchant's Ledger | Little Oddities Curiosities</title>
+  <!--
+    This page is completely separate from the customer-facing website.
+    It loads its own CSS and JS — nothing from style.css or script.js is used here.
+    Access is protected by a password checked server-side via a Netlify Function.
+  -->
+  <link rel="stylesheet" href="merchant-dashboard.css">
+</head>
+<body>
+
+  <!-- ═══════════════════════════════════════════════════════
+       Login Screen
+       Shown on first visit and after session expiry.
+       The password is checked by netlify/functions/dashboard-login.js
+       against the DASHBOARD_PASSWORD environment variable.
+       ═══════════════════════════════════════════════════════ -->
+  <div id="login-screen" class="login-screen">
+    <div class="login-card">
+      <div class="login-emblem">🗝️</div>
+      <h1>Merchant's Ledger</h1>
+      <p class="login-subtitle">Little Oddities Curiosities</p>
+      <p class="login-hint">Enter your key to open the ledger.</p>
+
+      <form id="login-form" autocomplete="off">
+        <div class="form-group">
+          <label for="login-password">Merchant's Key</label>
+          <input
+            type="password"
+            id="login-password"
+            placeholder="••••••••"
+            autocomplete="current-password"
+            required>
+        </div>
+        <button type="submit" class="btn-primary" id="login-button">
+          Open the Ledger
+        </button>
+        <p id="login-error" class="login-error hidden"></p>
+      </form>
+    </div>
+  </div>
+
+
+  <!-- ═══════════════════════════════════════════════════════
+       Dashboard
+       Hidden until the merchant is authenticated.
+       ═══════════════════════════════════════════════════════ -->
+  <div id="dashboard" class="dashboard hidden">
+
+    <!-- ── Sidebar ──────────────────────────────────────── -->
+    <aside class="sidebar">
+
+      <div class="sidebar-brand">
+        <div class="sidebar-emblem">🗝️</div>
+        <h2>Merchant's Ledger</h2>
+        <p>Little Oddities Curiosities</p>
+      </div>
+
+      <nav class="sidebar-nav" aria-label="Dashboard navigation">
+        <button class="nav-item active" data-tab="home" type="button">
+          <span class="nav-icon">🕯️</span>
+          <span>Dashboard</span>
+        </button>
+        <button class="nav-item" data-tab="orders" type="button">
+          <span class="nav-icon">📦</span>
+          <span>The Ledger</span>
+        </button>
+        <button class="nav-item" data-tab="supplies" type="button">
+          <span class="nav-icon">🏺</span>
+          <span>Supplies</span>
+        </button>
+        <button class="nav-item" data-tab="stats" type="button">
+          <span class="nav-icon">📊</span>
+          <span>Tallies</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <button id="refresh-button" class="btn-secondary btn-small" type="button">
+          ↻ Refresh Orders
+        </button>
+        <button id="logout-button" class="btn-ghost btn-small" type="button">
+          🚪 Close Ledger
+        </button>
+      </div>
+
+    </aside>
+
+
+    <!-- ── Main Content ──────────────────────────────────── -->
+    <main class="dashboard-main">
+
+      <!-- Loading state -->
+      <div id="loading-state" class="loading-state">
+        <p>🕯️ Consulting the ledger...</p>
+      </div>
+
+      <!-- Error state -->
+      <div id="error-state" class="error-state hidden">
+        <p id="error-message">Something went wrong.</p>
+        <button class="btn-primary" id="retry-button" style="max-width:200px;" type="button">
+          Try Again
+        </button>
+      </div>
+
+
+      <!-- ╔══════════════════════════════════════════════════
+           Tab: Dashboard Home
+           ══════════════════════════════════════════════════ -->
+      <section id="tab-home" class="tab-panel hidden">
+
+        <header class="panel-header">
+          <h1>Welcome back, Merchant.</h1>
+          <p class="panel-subtitle" id="home-date"></p>
+        </header>
+
+        <!-- Quick statistics -->
+        <div class="stat-grid">
+          <div class="stat-card">
+            <div class="stat-icon">📦</div>
+            <div class="stat-body">
+              <div class="stat-value" id="stat-today">—</div>
+              <div class="stat-label">Claimed Today</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">🌙</div>
+            <div class="stat-body">
+              <div class="stat-value" id="stat-month">—</div>
+              <div class="stat-label">Claimed This Month</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">💰</div>
+            <div class="stat-body">
+              <div class="stat-value" id="stat-revenue">—</div>
+              <div class="stat-label">Total Revenue</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">✦</div>
+            <div class="stat-body">
+              <div class="stat-value" id="stat-avg">—</div>
+              <div class="stat-label">Avg Order Value</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recent orders -->
+        <div class="section-heading">
+          <h2>✦ Recent Treasures Claimed ✦</h2>
+        </div>
+        <div id="recent-orders" class="orders-grid"></div>
+
+      </section>
+
+
+      <!-- ╔══════════════════════════════════════════════════
+           Tab: The Ledger (all orders)
+           ══════════════════════════════════════════════════ -->
+      <section id="tab-orders" class="tab-panel hidden">
+
+        <header class="panel-header">
+          <h1>📜 The Merchant's Ledger</h1>
+          <p class="panel-subtitle">Every treasure claimed by a traveller.</p>
+        </header>
+
+        <!-- Search, filter and export toolbar -->
+        <div class="ledger-toolbar">
+          <div class="ledger-search">
+            <input
+              type="text"
+              id="search-input"
+              placeholder="Search traveller, email or order ID..."
+              autocomplete="off">
+          </div>
+          <div class="ledger-filters">
+            <select id="status-filter" aria-label="Filter by fulfilment status">
+              <option value="">All Statuses</option>
+              <option value="new">🔵 New Order</option>
+              <option value="preparing">🟡 Preparing</option>
+              <option value="packed">🟠 Packed</option>
+              <option value="posted">🟣 Posted</option>
+              <option value="completed">🟢 Completed</option>
+            </select>
+          </div>
+          <button id="export-csv" class="btn-secondary" type="button">
+            📥 Export Ledger
+          </button>
+        </div>
+
+        <p id="orders-count" class="orders-count"></p>
+        <div id="orders-list" class="orders-grid"></div>
+
+      </section>
+
+
+      <!-- ╔══════════════════════════════════════════════════
+           Tab: Supplies (inventory management)
+           ══════════════════════════════════════════════════ -->
+      <section id="tab-supplies" class="tab-panel hidden">
+
+        <header class="panel-header">
+          <h1>🏺 Merchant's Supplies</h1>
+          <p class="panel-subtitle">Manage the stock of every treasure in the collection.</p>
+        </header>
+
+        <!-- Inventory statistics -->
+        <div class="inv-stat-grid">
+          <div class="stat-card">
+            <div class="stat-icon">📦</div>
+            <div class="stat-body">
+              <div class="stat-value" id="inv-stat-total">—</div>
+              <div class="stat-label">Total Treasures</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">🟢</div>
+            <div class="stat-body">
+              <div class="stat-value" id="inv-stat-instock">—</div>
+              <div class="stat-label">In Stock</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">🟡</div>
+            <div class="stat-body">
+              <div class="stat-value" id="inv-stat-low">—</div>
+              <div class="stat-label">Low Stock</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">🔴</div>
+            <div class="stat-body">
+              <div class="stat-value" id="inv-stat-out">—</div>
+              <div class="stat-label">Out of Stock</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">✦</div>
+            <div class="stat-body">
+              <div class="stat-value" id="inv-stat-units">—</div>
+              <div class="stat-label">Total Units</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Toolbar -->
+        <div class="ledger-toolbar">
+          <div class="ledger-search">
+            <input
+              type="text"
+              id="inv-search-input"
+              placeholder="Search treasures..."
+              autocomplete="off">
+          </div>
+          <div class="ledger-filters">
+            <select id="inv-status-filter" aria-label="Filter by stock status">
+              <option value="">All Stock Statuses</option>
+              <option value="in">🟢 In Stock</option>
+              <option value="low">🟡 Low Stock</option>
+              <option value="out">🔴 Out of Stock</option>
+              <option value="off">⚫ Unavailable</option>
+            </select>
+          </div>
+          <button id="inv-export-csv" class="btn-secondary" type="button">
+            📥 Export Supplies
+          </button>
+          <button id="inv-bulk-restock" class="btn-secondary" type="button">
+            ✦ Restock All
+          </button>
+        </div>
+
+        <p id="inv-count" class="orders-count"></p>
+        <div class="inventory-table-wrap">
+          <table class="inventory-table" id="inventory-table">
+            <thead>
+              <tr>
+                <th>Treasure</th>
+                <th>Status</th>
+                <th>Stock</th>
+                <th>Adjust</th>
+                <th>Low Stock At</th>
+                <th>Out of Stock Message</th>
+                <th>Availability</th>
+              </tr>
+            </thead>
+            <tbody id="inventory-tbody">
+              <!-- Populated by merchant-dashboard.js -->
+            </tbody>
+          </table>
+        </div>
+
+      </section>
+
+
+      <!-- ╔══════════════════════════════════════════════════
+           Tab: Tallies (statistics)
+           ══════════════════════════════════════════════════ -->
+      <section id="tab-stats" class="tab-panel hidden">
+
+        <header class="panel-header">
+          <h1>📊 The Merchant's Tallies</h1>
+          <p class="panel-subtitle">A full count of all treasures that have found their keepers.</p>
+        </header>
+
+        <div class="stats-detail-grid">
+
+          <div class="stats-block">
+            <h3>✦ Order Tallies ✦</h3>
+            <div class="stats-row">
+              <span>Total Treasures Claimed</span>
+              <span id="detail-total">—</span>
+            </div>
+            <div class="stats-row">
+              <span>Claimed Today</span>
+              <span id="detail-today">—</span>
+            </div>
+            <div class="stats-row">
+              <span>Claimed This Week</span>
+              <span id="detail-week">—</span>
+            </div>
+            <div class="stats-row">
+              <span>Claimed This Month</span>
+              <span id="detail-month">—</span>
+            </div>
+          </div>
+
+          <div class="stats-block">
+            <h3>✦ Revenue Tallies ✦</h3>
+            <div class="stats-row">
+              <span>Total Revenue</span>
+              <span id="detail-revenue">—</span>
+            </div>
+            <div class="stats-row">
+              <span>Average Order Value</span>
+              <span id="detail-avg">—</span>
+            </div>
+            <div class="stats-row">
+              <span>Highest Order</span>
+              <span id="detail-highest">—</span>
+            </div>
+            <div class="stats-row">
+              <span>Lowest Order</span>
+              <span id="detail-lowest">—</span>
+            </div>
+          </div>
+
+          <div class="stats-block">
+            <h3>✦ Fulfilment Status ✦</h3>
+            <div class="stats-row">
+              <span>🔵 New Orders</span>
+              <span id="detail-new">—</span>
+            </div>
+            <div class="stats-row">
+              <span>🟡 Preparing</span>
+              <span id="detail-preparing">—</span>
+            </div>
+            <div class="stats-row">
+              <span>🟠 Packed</span>
+              <span id="detail-packed">—</span>
+            </div>
+            <div class="stats-row">
+              <span>🟣 Posted</span>
+              <span id="detail-posted">—</span>
+            </div>
+            <div class="stats-row">
+              <span>🟢 Completed</span>
+              <span id="detail-completed">—</span>
+            </div>
+          </div>
+
+        </div>
+
+      </section>
+
+    </main>
+  </div><!-- /dashboard -->
+
+  <!--
+    merchant-dashboard.js is entirely self-contained.
+    script.js is NOT loaded here — no customer cart logic is involved.
+  -->
+  <script src="merchant-dashboard.js" defer></script>
+
+</body>
+</html>

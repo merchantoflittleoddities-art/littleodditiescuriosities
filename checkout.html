@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The Merchant's Counter</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body data-page="checkout">
+
+  <header class="site-header">
+    <div class="inner-wrap">
+      <a class="brand" href="index.html">
+        <div class="site-logo" aria-label="Site logo">
+          <img class="site-logo-image" src="" alt="">
+          <div class="site-logo-placeholder" aria-hidden="true">✦</div>
+        </div>
+        <div>
+          <p class="eyebrow site-brand-name"></p>
+          <h1>The Merchant's Counter</h1>
+        </div>
+      </a>
+
+      <nav class="nav-links">
+        <a href="index.html">Home</a>
+        <a href="shop.html">Shop</a>
+        <a href="collections.html">Collections</a>
+        <a href="tiers.html">Treasure Tiers</a>
+        <a href="about.html">Meet the Merchant</a>
+       <a href="reviews.html">Traveller Reviews</a>
+        <a href="merchants-guide.html">Merchant's Guide</a>
+        <a href="contact.html">Send Word to the Merchant</a>
+        <a href="cabinet.html">Curiosity Cabinet <span class="cart-count">0</span></a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="page-content">
+
+    <section class="section-intro">
+      <h2>The Merchant's Counter</h2>
+
+      <p>
+        Your chosen treasures have been carefully gathered from the Curiosity Cabinet.
+      </p>
+
+      <p>
+        Before they begin their journey, please confirm your details below.
+      </p>
+    </section>
+
+    <section class="section-intro">
+
+      <div class="card">
+
+        <h3>Traveller Details</h3>
+
+        <div class="form-group">
+          <label for="checkout-name">Traveller Name</label>
+          <input
+            type="text"
+            id="checkout-name"
+            placeholder="Traveller name">
+        </div>
+
+        <div class="form-group">
+          <label for="checkout-email">Email Address</label>
+          <input
+            type="email"
+            id="checkout-email"
+            placeholder="you@example.com">
+        </div>
+
+      </div>
+
+    </section>
+
+    <section class="section-intro">
+
+      <div class="card">
+
+        <h3>Your Treasures</h3>
+
+        <div class="checkout-summary">
+          <p>Your selected treasures will appear here.</p>
+        </div>
+
+        <hr>
+
+        <h3>Choose Your Journey</h3>
+
+        <div id="checkout-shipping-options">
+          <p class="muted">Choose how the Merchant should send your treasure.</p>
+        </div>
+
+        <hr>
+
+        <p>
+          <strong>Subtotal:</strong>
+          <span id="checkout-subtotal">£0.00</span>
+        </p>
+
+        <p>
+          <strong>Shipping:</strong>
+          <span id="checkout-shipping-cost">£0.00</span>
+        </p>
+
+        <p>
+          <strong>Total:</strong>
+          <span id="checkout-total">£0.00</span>
+        </p>
+
+        <button
+          class="button button-primary"
+          id="checkout-button">
+          🕯️ Proceed to Secure Payment
+        </button>
+
+      </div>
+
+    </section>
+
+  </main>
+
+  <footer class="site-footer">
+    <div class="inner-wrap">
+      <p>Every treasure has a story ✦</p>
+      <p>Instagram: <a class="social-instagram-link" href="#" target="_blank" rel="noreferrer"></a></p>
+      <p class="site-copyright"></p>
+    </div>
+  </footer>
+
+  <script src="script.js" defer></script>
+
+</body>
+</html>

@@ -1,0 +1,41 @@
+{
+  "shop": {
+    "name": "Little Oddities Curiosities",
+    "tagline": "Tiny treasures & curious creations",
+    "currency": "GBP",
+    "currencySymbol": "£",
+    "language": "en-GB"
+  },
+
+  "branding": {
+    "logo": "assets/images/logo/logo.png",
+    "favicon": "assets/images/logo/favicon.png",
+    "altText": "Little Oddities Curiosities logo"
+  },
+
+  "socials": {
+    "instagram": "https://instagram.com/little.oddities_curiosities",
+    "instagramHandle": "@little.oddities_curiosities"
+  },
+
+  "contact": {
+    "email": "",
+    "contactPageTitle": "Send Word to the Merchant",
+    "submitButton": "Send to the Merchant"
+  },
+
+  "shipping": {
+    "shipsTo": [
+      "United Kingdom"
+    ],
+    "processingTime": "1–3 working days",
+    "shippingMessage": "Currently shipping within the United Kingdom only."
+  },
+
+  "website": {
+    "merchantRecommendation": true,
+    "showReviews": false,
+    "showWishlist": false,
+    "maintenanceMode": false
+  }
+}

@@ -1,0 +1,11 @@
+# Netlify configuration for Little Oddities Curiosities
+
+[build]
+  # Run npm install so the stripe package is available to Netlify Functions
+  command   = "npm install"
+
+  # Serve the root directory as the published site
+  publish   = "."
+
+  # Netlify Functions live here
+  functions = "netlify/functions"

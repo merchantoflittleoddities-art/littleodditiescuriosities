@@ -1,0 +1,99 @@
+{
+  "tiers": [
+    {
+      "id": "miniature-relics",
+      "name": "Miniature Relics",
+      "price": 2.50,
+      "includes": [
+        "1 bead colour",
+        "No charm"
+      ],
+      "exampleBracelets": [],
+      "packaging": "Standard Handmade Packaging",
+      "displayOrder": 1
+    },
+    {
+      "id": "tiny-treasures",
+      "name": "Tiny Treasures",
+      "price": 3.00,
+      "includes": [
+        "1 bead colour",
+        "Spacer beads",
+        "No charm"
+      ],
+      "exampleBracelets": [],
+      "packaging": "Standard Handmade Packaging",
+      "displayOrder": 2
+    },
+    {
+      "id": "little-relics",
+      "name": "Little Relics",
+      "price": 4.50,
+      "includes": [
+        "1 bead colour",
+        "1 charm",
+        "Minimal spacer beads"
+      ],
+      "exampleBracelets": [
+        "Ghostly Valentine",
+        "When the Stars Listen",
+        "Wings After Winter",
+        "Ashes of Hope"
+      ],
+      "packaging": "Standard Handmade Packaging",
+      "displayOrder": 3
+    },
+    {
+      "id": "forgotten-treasures",
+      "name": "Forgotten Treasures",
+      "price": 5.50,
+      "includes": [
+        "2 bead colours",
+        "1 charm",
+        "Spacer beads"
+      ],
+      "exampleBracelets": [
+        "The Seer's Secret",
+        "The Moonlit Relic",
+        "Stormflower",
+        "Beyond the Veil",
+        "Forged in Flames"
+      ],
+      "packaging": "Standard Handmade Packaging",
+      "displayOrder": 4
+    },
+    {
+      "id": "hidden-artifacts",
+      "name": "Hidden Artifacts",
+      "price": 6.50,
+      "includes": [
+        "2 bead colours",
+        "2 charms",
+        "Spacer beads",
+        "Special packaging"
+      ],
+      "exampleBracelets": [
+        "Whispering Willows"
+      ],
+      "packaging": "Special Packaging",
+      "displayOrder": 5
+    },
+    {
+      "id": "ancient-artifacts",
+      "name": "Ancient Artifacts",
+      "price": 7.00,
+      "includes": [
+        "3 bead colours",
+        "2 charms",
+        "Spacer beads",
+        "Extra goodies",
+        "Premium packaging"
+      ],
+      "exampleBracelets": [
+        "Dusk Before Dawn"
+      ],
+      "packaging": "Premium Packaging with Extra Goodies",
+      "displayOrder": 6
+    }
+  ]
+}

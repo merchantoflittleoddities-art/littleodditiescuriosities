@@ -1,0 +1,43 @@
+{
+  "title": "The Merchant's Guide",
+  "subtitle": "A few common questions from fellow travellers before they continue their journey...",
+
+  "merchantGuide": [
+    {
+      "id": "delivery-time",
+      "question": "How long will my treasure take to arrive?",
+      "answer": "Once the Merchant has carefully wrapped your treasure and entrusted it to the courier, it may take a few days to complete its journey. Please allow your treasure a little time to roam the land before arriving safely at your door.",
+      "displayOrder": 1
+    },
+    {
+      "id": "handmade",
+      "question": "Are all treasures handmade?",
+      "answer": "Yes. Every treasure is lovingly handcrafted by the Merchant themself with great care and attention, making every piece wonderfully unique. Because each bracelet is made by hand, slight variations may occur, adding to the charm of every treasure.",
+      "displayOrder": 2
+    },
+    {
+      "id": "custom-bracelets",
+      "question": "Can I request a custom bracelet?",
+      "answer": "Of course. If you would like to personalise a treasure, simply Send Word to the Merchant with your ideas. Please note that the Merchant may take a few days to read and reply to your letter, so thank you for your patience.",
+      "displayOrder": 3
+    },
+    {
+      "id": "bracelet-size",
+      "question": "What size are the bracelets?",
+      "answer": "The Merchant is currently preparing a sizing guide to help every traveller find the perfect fit. Please check back soon.",
+      "displayOrder": 4
+    },
+    {
+      "id": "damaged",
+      "question": "What if my treasure arrives damaged?",
+      "answer": "Although every treasure is carefully prepared before beginning its journey, sometimes adventures do not go quite as planned. If your treasure arrives damaged, please Send Word to the Merchant or get in touch through Instagram. Please include a photograph of the damage together with your order number so the Merchant can help find the best possible solution.",
+      "displayOrder": 5
+    },
+    {
+      "id": "gift",
+      "question": "Can I send a treasure as a gift?",
+      "answer": "Absolutely. Simply enter the recipient's delivery address during checkout. If you would like the Merchant to know your treasure is a gift, you may also leave a note during checkout and it will be prepared with extra care.",
+      "displayOrder": 6
+    }
+  ]
+}

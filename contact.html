@@ -1,0 +1,111 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Contact</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body data-page="contact">
+  <header class="site-header">
+    <div class="inner-wrap">
+      <a class="brand" href="index.html">
+        <div class="site-logo" aria-label="Site logo">
+          <img class="site-logo-image" src="" alt="">
+          <div class="site-logo-placeholder" aria-hidden="true">✦</div>
+        </div>
+        <div>
+          <p class="eyebrow site-brand-name"></p>
+          <h1 class="contact-page-title"></h1>
+        </div>
+      </a>
+      <nav class="nav-links">
+        <a href="index.html">Home</a>
+        <a href="shop.html">Shop</a>
+        <a href="collections.html">Collections</a>
+        <a href="tiers.html">Treasure Tiers</a>
+        <a href="about.html">Meet the Merchant</a>
+        <a href="reviews.html">Traveller Reviews</a>
+        <a href="merchants-guide.html">Merchant's Guide</a>
+        <a href="contact.html">Send Word to the Merchant</a>
+        <a href="cabinet.html">Curiosity Cabinet <span class="cart-count">0</span></a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="page-content">
+    <section class="section-intro">
+      <h2 class="contact-page-title"></h2>
+      <p>Share your request, curiosity, or custom idea and the cabinet keeper will reply with care.</p>
+    </section>
+
+    <section class="section-intro">
+      <form
+    id="contact-form"
+    class="form-grid"
+    action="https://formspree.io/f/xvkpppdg"
+    method="POST">
+        <div class="form-group">
+          <label for="contact-name">Traveller name</label>
+      <input
+    type="text"
+    id="contact-name"
+    name="Traveller Name"
+    placeholder="Traveller name"
+    required>
+        </div>
+        <div class="form-group">
+          <label for="contact-email">Email address</label>
+          <input
+    type="email"
+    id="contact-email"
+    name="Email"
+    placeholder="you@example.com"
+    required>
+        </div>
+        <div class="form-group">
+          <label for="contact-subject">What brings you here?</label>
+          <input
+    type="text"
+    id="contact-subject"
+    name="Subject"
+    placeholder="What brings you here?">
+        </div>
+        <div class="form-group">
+          <label for="contact-message-text">Your Letter</label>
+<textarea
+    id="contact-message-text"
+    name="Letter"
+    placeholder="I am looking for..."
+    rows="6"></textarea>
+        </div>
+        <button class="button button-primary contact-submit-button" type="submit"></button>
+      </form>
+      <p class="contact-message"></p>
+    </section>
+
+    <section class="section-intro">
+      <div class="grid">
+        <article class="card">
+          <h3>Shipping whispers</h3>
+          <p class="shipping-message"></p>
+          <p class="shipping-details"></p>
+        </article>
+        <article class="card">
+          <h3>Cabinet policies</h3>
+          <p>Because every piece is handmade, each treasure is unique. If you need a special size or detail, send a note.</p>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="inner-wrap">
+      <p>Every treasure has a story ✦</p>
+      <p>Instagram: <a class="social-instagram-link" href="#" target="_blank" rel="noreferrer"></a></p>
+      <p class="site-copyright"></p>
+    </div>
+  </footer>
+  <script src="script.js" defer></script>
+</body>
+</html>

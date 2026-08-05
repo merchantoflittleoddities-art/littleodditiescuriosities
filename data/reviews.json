@@ -1,0 +1,22 @@
+{
+  "reviews": [
+    {
+      "id": 1,
+      "name": "Future Traveller",
+      "rating": 5,
+      "title": "Reviews will appear soon",
+      "review": "The Merchant has only just begun sending curious treasures into the world. Reviews from fellow travellers will appear here as adventures unfold.",
+       "verifiedTraveller": false,
+      "placeholder": true
+    },
+    {
+      "id": 2,
+      "name": "The Merchant",
+      "rating": 5,
+      "title": "A message from the Merchant",
+      "review": "Every bracelet is handmade with care before beginning its journey. I can't wait to hear what fellow travellers think once their treasures arrive.",
+      "verifiedTraveller": true,
+      "placeholder":true
+    }
+  ]
+}

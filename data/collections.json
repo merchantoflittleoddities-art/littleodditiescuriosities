@@ -1,0 +1,45 @@
+{
+  "collections": [
+    {
+      "id": "haunted-love",
+      "name": "Haunted Love",
+      "icon": "🖤",
+      "colourTheme": "#4B2E39",
+      "featuredBracelet": "ghostly-valentine",
+      "displayOrder": 1,
+      "shortDescription": "Love stories that linger beyond time...",
+      "fullDescription": "Some love stories never truly fade. Haunted Love celebrates memories, devotion and affection that continue to echo long after moments have passed. Every treasure in this collection carries a quiet reminder that love can leave lasting footprints."
+    },
+    {
+      "id": "enchanted-forest",
+      "name": "Enchanted Forest",
+      "icon": "🍄",
+      "colourTheme": "#4D6B4A",
+      "featuredBracelet": "whispering-willows",
+      "displayOrder": 2,
+      "shortDescription": "Woodland magic hidden beneath ancient trees...",
+      "fullDescription": "Step beneath ancient branches where hidden paths, moss-covered stones and whispered folklore meet. These treasures are inspired by quiet forests, forgotten trails and the gentle magic of nature."
+    },
+    {
+      "id": "little-miracles",
+      "name": "Little Miracles",
+      "icon": "✨",
+      "colourTheme": "#6C5B95",
+      "featuredBracelet": "stormflower",
+      "displayOrder": 3,
+      "shortDescription": "Small reminders that hope can bloom in unexpected places.",
+      "fullDescription": "Not every miracle arrives with fanfare. Sometimes they're found in quiet moments, gentle encouragement, or the courage to keep moving forward one step at a time. The Little Miracles collection celebrates resilience, hope and the beauty of finding light after darkness. Each treasure is a reminder that even the smallest spark can make a difference."
+    },
+
+    {
+      "id": "forgotten-treasures",
+      "name": "Forgotten Treasures",
+      "icon": "🗝️",
+      "colourTheme": "#7A5C42",
+      "featuredBracelet": "the-seers-secret",
+      "displayOrder": 4,
+      "shortDescription": "Relics waiting to be rediscovered...",
+      "fullDescription": "Hidden beneath dust and time lie stories waiting to be uncovered. Forgotten Treasures is a growing collection of mysterious relics, ancient secrets and curious discoveries that continue to expand as new treasures are found."
+    }
+  ]
+}
