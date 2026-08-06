@@ -1,0 +1,57 @@
+{
+  "title": "🕯️ From the Merchant's Desk",
+  "subtitle": "Notes, letters and half-finished thoughts left upon the desk between journeys.",
+  "closingNote": "The Merchant writes when the evenings allow.",
+
+  "settings": {
+    "homepageLimit": 3
+  },
+
+  "entries": [
+    {
+      "id": "emerald-beads",
+      "title": "The Traveller with the Emerald Beads",
+      "date": "2026-08-04",
+      "dateLabel": "Early August, before the shutters were opened",
+      "body": [
+        "A wandering traveller arrived this morning carrying a small tin box that rattled softly, and would not tell me where it had come from. Inside were emerald beads unlike any I have seen before — green in one light, almost black in another, as though each had swallowed a little of the forest it grew beside.",
+        "They are resting on the windowsill now, growing used to the shop. I have not yet decided what they will become. I suspect they already know, and are simply waiting for me to catch up."
+      ],
+      "signoff": "— The Merchant",
+      "pinned": false,
+      "status": "published",
+      "publishAt": null,
+      "displayOrder": 1
+    },
+    {
+      "id": "quiet-rain",
+      "title": "A Quiet Evening, and Rather a Lot of Candles",
+      "date": "2026-07-29",
+      "dateLabel": "A wet evening in late July",
+      "body": [
+        "Rain kept the workshop unusually quiet today. Even the candle flames seemed reluctant to dance.",
+        "So I spent the evening sorting the drawer of odd findings — the single clasps, the beads without pairs, the little brass charms whose stories I have long since forgotten. Nothing was finished. Everything was tidied. Some evenings that is exactly the right amount of work."
+      ],
+      "signoff": "Until our paths cross again,\n— The Merchant",
+      "pinned": false,
+      "status": "published",
+      "publishAt": null,
+      "displayOrder": 2
+    },
+    {
+      "id": "autumn-window",
+      "title": "Autumn at the Workshop Window",
+      "date": "2026-07-21",
+      "dateLabel": "The first cool morning of the season",
+      "body": [
+        "Autumn has begun whispering through the workshop windows again. I suspect darker curiosities will soon appear upon the shelves.",
+        "There is a particular hour in late summer when the light turns the colour of old honey and everything upon the workbench looks faintly enchanted. I have been gathering amber, smoke-grey glass and a small handful of acorn caps found along the lane. Something is coming. I am not entirely certain what yet."
+      ],
+      "signoff": "— The Merchant",
+      "pinned": false,
+      "status": "published",
+      "publishAt": null,
+      "displayOrder": 3
+    }
+  ]
+}

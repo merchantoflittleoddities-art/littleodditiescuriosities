@@ -12,6 +12,7 @@ const PRODUCTS_PATH        = "./data/catalogue.json";
 const COLLECTIONS_PATH     = "./data/collections.json";
 const TIERS_PATH           = "./data/tiers.json";
 const MERCHANTS_GUIDE_PATH = "./data/merchants-guide.json";
+const DESK_ENTRIES_PATH    = "./data/desk-entries.json";
 const INVENTORY_URL        = "/.netlify/functions/get-inventory";
 const IMAGE_ROOT           = "assets/images/products";
 const FREE_SHIPPING_THRESHOLD = 30;
@@ -44,6 +45,13 @@ const DEFAULT_MERCHANT_GUIDE = {
   title: "The Merchant's Guide",
   subtitle: "Every traveller has a few questions before beginning their journey. Here you'll find answers to some of the most common curiosities.",
   merchantGuide: []
+};
+const DEFAULT_DESK_ENTRIES = {
+  title: "🕯️ From the Merchant's Desk",
+  subtitle: "Notes, letters and half-finished thoughts left upon the desk between journeys.",
+  closingNote: "",
+  settings: { homepageLimit: 3 },
+  entries: []
 };
 const DEFAULT_SETTINGS = {
   shop: {
@@ -326,6 +334,62 @@ async function loadMerchantGuide() {
     window.ALL_MERCHANT_GUIDE = DEFAULT_MERCHANT_GUIDE;
     return DEFAULT_MERCHANT_GUIDE;
   }
+}
+
+/**
+ * 🕯️ From the Merchant's Desk
+ * Loads the Merchant's desk entries. Entries the Merchant has not published,
+ * or has scheduled for a later date, are left out here — so a future Merchant
+ * Dashboard only ever has to write the data, never touch the front end.
+ */
+async function loadDeskEntries() {
+  try {
+    const response = await fetch(DESK_ENTRIES_PATH, { cache: "no-store" });
+    if (!response.ok) throw new Error("The Merchant's desk could not be reached.");
+    const data = await response.json();
+    const source = (typeof data === "object" && data !== null) ? data : {};
+    const entries = Array.isArray(source.entries)
+      ? source.entries
+      : Array.isArray(source) ? source : [];
+
+    const normalized = {
+      ...DEFAULT_DESK_ENTRIES,
+      ...source,
+      settings: { ...DEFAULT_DESK_ENTRIES.settings, ...(source.settings || {}) },
+      entries: entries.filter(isDeskEntryVisible).sort(compareDeskEntries)
+    };
+
+    window.ALL_DESK_ENTRIES = normalized;
+    return normalized;
+  } catch (e) {
+    window.ALL_DESK_ENTRIES = DEFAULT_DESK_ENTRIES;
+    return DEFAULT_DESK_ENTRIES;
+  }
+}
+
+/** An entry appears once it is published and its moment has arrived. */
+function isDeskEntryVisible(entry) {
+  if (!entry || typeof entry !== "object") return false;
+
+  const status = String(entry.status || "published").toLowerCase();
+  if (status === "draft" || status === "hidden" || status === "archived") return false;
+
+  const scheduledFor = entry.publishAt ? Date.parse(entry.publishAt) : NaN;
+  if (!Number.isNaN(scheduledFor) && scheduledFor > Date.now()) return false;
+  if (status === "scheduled" && Number.isNaN(scheduledFor)) return false;
+
+  return true;
+}
+
+/** Pinned pages rest on top; the rest fall newest-first. */
+function compareDeskEntries(a, b) {
+  if (Boolean(a.pinned) !== Boolean(b.pinned)) return a.pinned ? -1 : 1;
+
+  const dateA = Date.parse(a.date || a.publishAt || "");
+  const dateB = Date.parse(b.date || b.publishAt || "");
+  if (!Number.isNaN(dateA) && !Number.isNaN(dateB) && dateA !== dateB) return dateB - dateA;
+
+  return (Number(a.displayOrder) || 0) - (Number(b.displayOrder) || 0);
 }
 
 async function loadSettings() {
@@ -908,6 +972,107 @@ function renderHelpfulPages(query) {
 
 
 // ============================================================
+// 🕯️ From the Merchant's Desk
+// ============================================================
+
+/**
+ * Rewrites the desk with whatever the Merchant has left there.
+ * The markup produced here matches the fallback markup in index.html,
+ * so entries can be swapped for dashboard-authored content without
+ * touching the layout or the styles.
+ */
+function renderDeskEntries() {
+  const deskArea = document.querySelector(".desk-entries");
+  if (!deskArea) return;
+
+  const desk    = window.ALL_DESK_ENTRIES || DEFAULT_DESK_ENTRIES;
+  const limit   = Number(desk.settings?.homepageLimit) || 3;
+  const entries = Array.isArray(desk.entries) ? desk.entries.slice(0, limit) : [];
+
+  // Nothing to show yet — leave the page exactly as the markup found it.
+  if (entries.length) {
+    deskArea.innerHTML = entries.map(buildDeskEntry).join("");
+
+    const heading = document.querySelector(".desk-heading");
+    if (heading && desk.title) heading.textContent = desk.title;
+
+    const subtitle = document.querySelector(".desk-subtitle");
+    if (subtitle && desk.subtitle) subtitle.textContent = desk.subtitle;
+
+    const closing = document.querySelector(".desk-closing");
+    if (closing) {
+      closing.textContent = desk.closingNote || "";
+      closing.hidden = !desk.closingNote;
+    }
+  }
+
+  observeDeskEntries(deskArea);
+}
+
+function buildDeskEntry(entry) {
+  const paragraphs = Array.isArray(entry.body)
+    ? entry.body
+    : String(entry.body || "").split(/\n{2,}/);
+
+  const body = paragraphs
+    .filter((p) => String(p).trim())
+    .map((p) => `<p>${escapeHtml(String(p).trim())}</p>`)
+    .join("");
+
+  const signoff = String(entry.signoff || "").trim();
+
+  return `
+    <article class="desk-entry${entry.pinned ? " desk-entry--pinned" : ""}">
+      <span class="desk-pin" aria-hidden="true"></span>
+      <header class="desk-entry-header">
+        ${entry.pinned ? `<span class="desk-entry-pinned-note">Left on top of the pile</span>` : ""}
+        <p class="desk-entry-date">${escapeHtml(formatDeskDate(entry))}</p>
+        <h3 class="desk-entry-title">${escapeHtml(entry.title || "")}</h3>
+      </header>
+      <div class="desk-entry-body">${body}</div>
+      ${signoff ? `<p class="desk-entry-signoff">${escapeHtml(signoff).replace(/\n/g, "<br>")}</p>` : ""}
+    </article>
+  `;
+}
+
+/** A poetic label if the Merchant left one, otherwise a plain date. */
+function formatDeskDate(entry) {
+  if (entry.dateLabel) return String(entry.dateLabel);
+
+  const stamp = Date.parse(entry.date || entry.publishAt || "");
+  if (Number.isNaN(stamp)) return "";
+
+  return new Date(stamp).toLocaleDateString(
+    window.SETTINGS?.shop?.language || "en-GB",
+    { day: "numeric", month: "long", year: "numeric" }
+  );
+}
+
+/** Each page fades gently into view as the traveller scrolls past. */
+function observeDeskEntries(deskArea) {
+  const pages = Array.from(deskArea.querySelectorAll(".desk-entry"));
+  if (!pages.length) return;
+
+  if (typeof IntersectionObserver !== "function") {
+    pages.forEach((page) => page.classList.add("is-visible"));
+    return;
+  }
+
+  deskArea.classList.add("reveal-ready");
+
+  const observer = new IntersectionObserver((records, self) => {
+    records.forEach((record) => {
+      if (!record.isIntersecting) return;
+      record.target.classList.add("is-visible");
+      self.unobserve(record.target);
+    });
+  }, { threshold: 0.15, rootMargin: "0px 0px -40px 0px" });
+
+  pages.forEach((page) => observer.observe(page));
+}
+
+
+// ============================================================
 // Page renderers
 // ============================================================
 
@@ -941,6 +1106,9 @@ function renderHomePage(products) {
       `)
       .join("");
   }
+
+  // Notes left upon the Merchant's desk
+  renderDeskEntries();
 
   // Featured products
   const featuredArea = document.querySelector(".featured-grid");
@@ -1599,6 +1767,7 @@ function initPage() {
     loadCollections(),
     loadTiers(),
     loadMerchantGuide(),
+    loadDeskEntries(),
     loadInventory()        /* fetch live stock levels before rendering any products */
   ]).then(([settings, products]) => {
     renderGlobalSettings();
