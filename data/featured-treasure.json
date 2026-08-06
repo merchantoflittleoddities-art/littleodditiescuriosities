@@ -1,0 +1,48 @@
+{
+  "title": "✨ Featured Treasure",
+  "intro": "Every so often the Merchant lifts one curiosity down from the high shelf and sets it where the candlelight can reach it. There is no sign and no fuss — only a treasure left waiting, quite patiently, for whoever happens to be looking for it.",
+  "closingNote": "The Merchant chooses again whenever something upon the shelves catches the light.",
+
+  "settings": {
+    "showWhenOutOfStock": true
+  },
+
+  "features": [
+    {
+      "id": "dusk-before-dawn-late-summer",
+      "productId": "dusk-before-dawn",
+      "eyebrow": "Set aside by the Merchant",
+      "ctaLabel": "View This Treasure",
+      "imageAlt": "Dusk Before Dawn — a deep indigo beaded bracelet with two small charms, resting where the candlelight reaches it.",
+      "merchantNote": [
+        "I made this one during that strange blue hour when the candles have burned low and the birds have not yet decided whether to begin. The beads were meant for something far brighter. They refused, and turned the colour of the sky instead.",
+        "It has stayed near the window ever since, because travellers who arrive weary always seem to notice it first. If you have been holding on through a long stretch of night, I rather suspect this one has been waiting for you, and not the other way round."
+      ],
+      "signoff": "— The Merchant",
+      "seasonal": null,
+      "pinned": false,
+      "status": "published",
+      "publishAt": null,
+      "expiresAt": null,
+      "displayOrder": 1
+    },
+    {
+      "id": "beyond-the-veil-autumn",
+      "productId": "beyond-the-veil",
+      "eyebrow": "Kept back for the darker evenings",
+      "ctaLabel": "View This Treasure",
+      "imageAlt": "Beyond the Veil — a shadowed beaded bracelet set aside for the turning of the season.",
+      "merchantNote": [
+        "This one is not ready to be seen yet. It is wrapped in cloth at the back of the drawer, waiting for the evenings to draw in and the shop to smell of woodsmoke again.",
+        "Some treasures simply refuse to arrive early. I have learned not to argue with them."
+      ],
+      "signoff": "— The Merchant",
+      "seasonal": "Autumn",
+      "pinned": false,
+      "status": "scheduled",
+      "publishAt": "2026-09-21T06:00:00.000Z",
+      "expiresAt": null,
+      "displayOrder": 2
+    }
+  ]
+}

@@ -1145,3 +1145,336 @@ textarea {
     transform: rotate(0.4deg);
   }
 }
+
+/* ==========================================================
+   ✨ Featured Treasure
+   One curiosity lifted into the candlelight — gilt frame,
+   a faint sparkle and the Merchant's own hand beneath it.
+   Scoped entirely to .featured-treasure* so nothing else is affected.
+========================================================== */
+
+.featured-treasure-section {
+  margin-top: 64px;
+}
+
+.featured-treasure-intro {
+  font-style: italic;
+}
+
+.featured-treasure-stage {
+  width: min(980px, 100%);
+  margin: 40px auto 0;
+}
+
+.featured-treasure {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  gap: 40px;
+  align-items: center;
+  padding: 46px;
+  border: 1px solid rgba(197, 161, 90, 0.34);
+  border-radius: 28px;
+  background-image:
+    /* candlelight gathering at the top of the alcove */
+    radial-gradient(circle at 12% -8%, rgba(197, 161, 90, 0.16), transparent 44%),
+    radial-gradient(circle at 88% 106%, rgba(114, 84, 140, 0.16), transparent 44%),
+    linear-gradient(170deg, rgba(255, 246, 226, 0.06), rgba(255, 246, 226, 0.025));
+  background-color: var(--surface);
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.34),
+    0 0 42px rgba(197, 161, 90, 0.07),
+    inset 0 0 70px rgba(0, 0, 0, 0.16);
+  transition: transform 0.5s ease, box-shadow 0.5s ease, border-color 0.5s ease;
+}
+
+/* A second, finer rule inside the border — the gilt line of a display case */
+.featured-treasure::before {
+  content: "";
+  position: absolute;
+  inset: 12px;
+  border: 1px solid rgba(197, 161, 90, 0.16);
+  border-radius: 20px;
+  pointer-events: none;
+}
+
+.featured-treasure:hover,
+.featured-treasure:focus-within {
+  border-color: rgba(197, 161, 90, 0.5);
+  box-shadow:
+    0 30px 72px rgba(0, 0, 0, 0.42),
+    0 0 60px rgba(197, 161, 90, 0.12),
+    inset 0 0 70px rgba(0, 0, 0, 0.12);
+}
+
+/* Two small marks of the Merchant's approval, resting in the corners */
+.featured-treasure-sparkle {
+  position: absolute;
+  color: var(--accent);
+  font-size: 0.85rem;
+  opacity: 0.4;
+  pointer-events: none;
+  animation: featured-treasure-shimmer 7s ease-in-out infinite;
+}
+
+.featured-treasure-sparkle--start {
+  top: 20px;
+  left: 22px;
+}
+
+.featured-treasure-sparkle--end {
+  bottom: 20px;
+  right: 22px;
+  animation-delay: 3.5s;
+}
+
+@keyframes featured-treasure-shimmer {
+  0%, 100% { opacity: 0.28; }
+  50%      { opacity: 0.72; }
+}
+
+/* ── The treasure itself ─────────────────────────────────── */
+.featured-treasure-frame {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 4 / 5;
+  overflow: hidden;
+  border: 1px solid rgba(197, 161, 90, 0.3);
+  border-radius: 22px;
+  background: rgba(255, 250, 235, 0.04);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.3);
+  transition: transform 0.5s ease, box-shadow 0.5s ease, border-color 0.5s ease;
+}
+
+.featured-treasure:hover .featured-treasure-frame,
+.featured-treasure:focus-within .featured-treasure-frame {
+  transform: translateY(-6px);
+  border-color: rgba(197, 161, 90, 0.48);
+  box-shadow:
+    0 26px 54px rgba(0, 0, 0, 0.38),
+    0 0 34px rgba(197, 161, 90, 0.14);
+}
+
+.featured-treasure-image {
+  grid-area: 1 / 1;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.6s ease;
+}
+
+.featured-treasure:hover .featured-treasure-image {
+  transform: scale(1.03);
+}
+
+.featured-treasure-frame .featured-treasure-placeholder {
+  grid-area: 1 / 1;
+  margin: 0;
+  max-width: 100%;
+  padding: 24px;
+  color: var(--muted);
+  font-size: 0.95rem;
+  font-style: italic;
+  text-align: center;
+}
+
+/* ── The Merchant's words ────────────────────────────────── */
+.featured-treasure-copy {
+  min-width: 0;
+}
+
+.featured-treasure-copy p {
+  max-width: none;
+  margin: 0;
+  text-align: left;
+}
+
+.featured-treasure-copy .featured-treasure-eyebrow {
+  color: var(--accent);
+  font-size: 0.78rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.featured-treasure-season {
+  color: var(--accent-hover);
+}
+
+.featured-treasure-name {
+  margin: 10px 0 0;
+  color: var(--accent);
+  font-size: clamp(1.6rem, 3vw, 2.1rem);
+  line-height: 1.3;
+}
+
+.featured-treasure-copy .featured-treasure-description {
+  margin-top: 14px;
+  color: var(--muted);
+}
+
+.featured-treasure-copy .featured-treasure-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+  color: var(--muted);
+  font-size: 0.96rem;
+}
+
+.featured-treasure-copy .featured-treasure-price {
+  margin-top: 20px;
+  color: var(--text);
+  font-size: 1.5rem;
+  letter-spacing: 0.02em;
+}
+
+.featured-treasure-price-label {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--accent);
+  font-size: 0.72rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+/* Written in the Merchant's own hand, as the desk entries are */
+.featured-treasure-note {
+  margin-top: 26px;
+  padding-left: 22px;
+  border-left: 1px solid rgba(197, 161, 90, 0.28);
+  font-family: "Caveat", "Segoe Script", "Bradley Hand", cursive;
+  font-size: clamp(1.3rem, 1rem + 0.8vw, 1.5rem);
+  line-height: 1.7;
+  color: #F6EDDA;
+}
+
+.featured-treasure-copy .featured-treasure-note p {
+  margin: 0 0 14px;
+  color: inherit;
+}
+
+.featured-treasure-copy .featured-treasure-note p:last-child {
+  margin-bottom: 0;
+}
+
+.featured-treasure-copy .featured-treasure-signoff {
+  margin-top: 14px;
+  padding-left: 22px;
+  font-family: "Caveat", "Segoe Script", "Bradley Hand", cursive;
+  font-size: clamp(1.2rem, 1rem + 0.6vw, 1.35rem);
+  color: var(--muted);
+}
+
+.featured-treasure-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 28px;
+}
+
+.featured-treasure-section .featured-treasure-closing {
+  margin-top: 32px;
+  font-style: italic;
+  font-size: 0.92rem;
+  opacity: 0.85;
+}
+
+/* Gentle fade-in on scroll — only armed once JavaScript is present,
+   so the treasure is never left invisible if the script fails to run. */
+.featured-treasure-section.reveal-ready .featured-treasure {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.9s ease, transform 0.9s ease, box-shadow 0.5s ease, border-color 0.5s ease;
+}
+
+.featured-treasure-section.reveal-ready .featured-treasure.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (max-width: 900px) {
+  .featured-treasure {
+    grid-template-columns: 1fr;
+    gap: 32px;
+    padding: 40px 32px;
+  }
+
+  .featured-treasure-frame {
+    width: min(380px, 100%);
+    margin: 0 auto;
+    aspect-ratio: 1 / 1;
+  }
+
+  .featured-treasure-copy .featured-treasure-eyebrow,
+  .featured-treasure-copy .featured-treasure-name,
+  .featured-treasure-copy .featured-treasure-price {
+    text-align: center;
+  }
+
+  .featured-treasure-meta,
+  .featured-treasure-actions {
+    justify-content: center;
+  }
+}
+
+@media (max-width: 680px) {
+  .featured-treasure-section {
+    margin-top: 48px;
+  }
+
+  .featured-treasure {
+    padding: 34px 22px;
+    border-radius: 22px;
+  }
+
+  .featured-treasure::before {
+    inset: 9px;
+    border-radius: 16px;
+  }
+
+  .featured-treasure-sparkle--start {
+    top: 14px;
+    left: 15px;
+  }
+
+  .featured-treasure-sparkle--end {
+    bottom: 14px;
+    right: 15px;
+  }
+
+  .featured-treasure-note,
+  .featured-treasure-signoff {
+    padding-left: 16px;
+  }
+
+  .featured-treasure-actions .button {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .featured-treasure,
+  .featured-treasure-frame,
+  .featured-treasure-image,
+  .featured-treasure-section.reveal-ready .featured-treasure {
+    transition: none;
+  }
+
+  .featured-treasure-section.reveal-ready .featured-treasure,
+  .featured-treasure-section.reveal-ready .featured-treasure.is-visible {
+    opacity: 1;
+    transform: none;
+  }
+
+  .featured-treasure:hover .featured-treasure-frame,
+  .featured-treasure:focus-within .featured-treasure-frame,
+  .featured-treasure:hover .featured-treasure-image {
+    transform: none;
+  }
+
+  .featured-treasure-sparkle {
+    animation: none;
+    opacity: 0.4;
+  }
+}

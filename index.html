@@ -109,6 +109,58 @@
     </section>
 
     <!--
+      ✨ Featured Treasure
+      The treasure below is the fallback shown before (or without) JavaScript.
+      script.js replaces .featured-treasure-stage with whatever is in
+      data/featured-treasure.json, so the Merchant's choice can change
+      (and later be scheduled or pinned) without touching markup or styles.
+    -->
+    <section class="section-intro featured-treasure-section" id="featured-treasure"
+             aria-labelledby="featured-treasure-heading">
+      <h2 class="featured-treasure-heading" id="featured-treasure-heading">✨ Featured Treasure</h2>
+      <p class="featured-treasure-intro">Every so often the Merchant lifts one curiosity down from the high shelf and sets it where the candlelight can reach it. There is no sign and no fuss — only a treasure left waiting, quite patiently, for whoever happens to be looking for it.</p>
+
+      <div class="featured-treasure-stage">
+        <article class="featured-treasure">
+          <span class="featured-treasure-sparkle featured-treasure-sparkle--start" aria-hidden="true">✦</span>
+          <span class="featured-treasure-sparkle featured-treasure-sparkle--end" aria-hidden="true">✦</span>
+
+          <div class="featured-treasure-frame">
+            <p class="featured-treasure-placeholder">A photograph of this treasure will appear soon.</p>
+          </div>
+
+          <div class="featured-treasure-copy">
+            <p class="featured-treasure-eyebrow">Set aside by the Merchant</p>
+            <h3 class="featured-treasure-name">Dusk Before Dawn</h3>
+            <p class="featured-treasure-description">A deep bracelet inspired by the hush between night and the first light of morning.</p>
+
+            <p class="featured-treasure-meta">
+              <span class="muted">Ancient Artifacts</span>
+              <span>Little Miracles</span>
+            </p>
+
+            <p class="featured-treasure-price">
+              <span class="featured-treasure-price-label">Price</span>
+              £7.00
+            </p>
+
+            <div class="featured-treasure-note">
+              <p>I made this one during that strange blue hour when the candles have burned low and the birds have not yet decided whether to begin. The beads were meant for something far brighter. They refused, and turned the colour of the sky instead.</p>
+              <p>It has stayed near the window ever since, because travellers who arrive weary always seem to notice it first. If you have been holding on through a long stretch of night, I rather suspect this one has been waiting for you, and not the other way round.</p>
+            </div>
+            <p class="featured-treasure-signoff">— The Merchant</p>
+
+            <div class="featured-treasure-actions">
+              <a class="button button-primary" href="product.html?id=dusk-before-dawn">View This Treasure</a>
+            </div>
+          </div>
+        </article>
+      </div>
+
+      <p class="featured-treasure-closing">The Merchant chooses again whenever something upon the shelves catches the light.</p>
+    </section>
+
+    <!--
       🕯️ From the Merchant's Desk
       Entries below are the fallback shown before (or without) JavaScript.
       script.js replaces .desk-entries with whatever is in data/desk-entries.json,
