@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Home</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600&display=swap">
   <link rel="stylesheet" href="style.css">
 </head>
 <body data-page="home">
@@ -103,6 +106,60 @@
           <a class="button button-primary" href="tiers.html?tier=Ancient%20Artifacts">Discover</a>
         </article>
       </div>
+    </section>
+
+    <!--
+      🕯️ From the Merchant's Desk
+      Entries below are the fallback shown before (or without) JavaScript.
+      script.js replaces .desk-entries with whatever is in data/desk-entries.json,
+      so this section can become fully dynamic without changing the markup or styles.
+    -->
+    <section class="section-intro desk-section" id="merchants-desk">
+      <h2 class="desk-heading">🕯️ From the Merchant's Desk</h2>
+      <p class="desk-subtitle">Notes, letters and half-finished thoughts left upon the desk between journeys.</p>
+
+      <div class="desk-entries">
+        <article class="desk-entry">
+          <span class="desk-pin" aria-hidden="true"></span>
+          <header class="desk-entry-header">
+            <p class="desk-entry-date">Early August, before the shutters were opened</p>
+            <h3 class="desk-entry-title">The Traveller with the Emerald Beads</h3>
+          </header>
+          <div class="desk-entry-body">
+            <p>A wandering traveller arrived this morning carrying a small tin box that rattled softly, and would not tell me where it had come from. Inside were emerald beads unlike any I have seen before — green in one light, almost black in another, as though each had swallowed a little of the forest it grew beside.</p>
+            <p>They are resting on the windowsill now, growing used to the shop. I have not yet decided what they will become. I suspect they already know, and are simply waiting for me to catch up.</p>
+          </div>
+          <p class="desk-entry-signoff">— The Merchant</p>
+        </article>
+
+        <article class="desk-entry">
+          <span class="desk-pin" aria-hidden="true"></span>
+          <header class="desk-entry-header">
+            <p class="desk-entry-date">A wet evening in late July</p>
+            <h3 class="desk-entry-title">A Quiet Evening, and Rather a Lot of Candles</h3>
+          </header>
+          <div class="desk-entry-body">
+            <p>Rain kept the workshop unusually quiet today. Even the candle flames seemed reluctant to dance.</p>
+            <p>So I spent the evening sorting the drawer of odd findings — the single clasps, the beads without pairs, the little brass charms whose stories I have long since forgotten. Nothing was finished. Everything was tidied. Some evenings that is exactly the right amount of work.</p>
+          </div>
+          <p class="desk-entry-signoff">Until our paths cross again,<br>— The Merchant</p>
+        </article>
+
+        <article class="desk-entry">
+          <span class="desk-pin" aria-hidden="true"></span>
+          <header class="desk-entry-header">
+            <p class="desk-entry-date">The first cool morning of the season</p>
+            <h3 class="desk-entry-title">Autumn at the Workshop Window</h3>
+          </header>
+          <div class="desk-entry-body">
+            <p>Autumn has begun whispering through the workshop windows again. I suspect darker curiosities will soon appear upon the shelves.</p>
+            <p>There is a particular hour in late summer when the light turns the colour of old honey and everything upon the workbench looks faintly enchanted. I have been gathering amber, smoke-grey glass and a small handful of acorn caps found along the lane. Something is coming. I am not entirely certain what yet.</p>
+          </div>
+          <p class="desk-entry-signoff">— The Merchant</p>
+        </article>
+      </div>
+
+      <p class="desk-closing">The Merchant writes when the evenings allow.</p>
     </section>
 
   </main>

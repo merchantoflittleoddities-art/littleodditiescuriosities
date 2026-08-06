@@ -920,3 +920,228 @@ textarea {
   }
 
 }
+/* ==========================================================
+   🕯️ From the Merchant's Desk
+   Pages left upon the desk — parchment, candlelight and ink.
+   Scoped entirely to .desk-* so nothing else is affected.
+========================================================== */
+
+.desk-section {
+  margin-top: 64px;
+}
+
+.desk-subtitle {
+  font-style: italic;
+}
+
+.desk-entries {
+  width: min(760px, 100%);
+  margin: 40px auto 0;
+  display: grid;
+  gap: 34px;
+}
+
+.desk-entry {
+  position: relative;
+  padding: 46px 40px 34px;
+  border: 1px solid rgba(197, 161, 90, 0.26);
+  border-radius: 6px 18px 8px 20px;
+  color: var(--text);
+  background-image:
+    /* faint ruled lines, as though the page were torn from a notebook */
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0 37px,
+      rgba(197, 161, 90, 0.06) 37px 38px
+    ),
+    /* candlelight pooling at the top of the page */
+    radial-gradient(circle at 18% -10%, rgba(197, 161, 90, 0.14), transparent 46%),
+    radial-gradient(circle at 92% 108%, rgba(114, 84, 140, 0.12), transparent 42%),
+    linear-gradient(170deg, rgba(255, 246, 226, 0.07), rgba(255, 246, 226, 0.035));
+  box-shadow:
+    0 18px 46px rgba(0, 0, 0, 0.34),
+    inset 0 0 60px rgba(0, 0, 0, 0.18);
+  transition: transform 0.45s ease, box-shadow 0.45s ease, border-color 0.45s ease;
+}
+
+/* Each page rests at a slightly different angle, as papers do */
+.desk-entry:nth-child(odd)  { transform: rotate(-0.35deg); }
+.desk-entry:nth-child(even) { transform: rotate(0.4deg); }
+
+.desk-entry:hover,
+.desk-entry:focus-within {
+  transform: rotate(0deg) translateY(-4px);
+  border-color: rgba(197, 161, 90, 0.44);
+  box-shadow:
+    0 26px 60px rgba(0, 0, 0, 0.42),
+    inset 0 0 60px rgba(0, 0, 0, 0.12);
+}
+
+/* A small drop of wax holding the page down */
+.desk-pin {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  width: 16px;
+  height: 16px;
+  margin-left: -8px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 34% 30%, rgba(255, 226, 168, 0.95), var(--accent) 58%, rgba(120, 88, 40, 0.9));
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.45), 0 0 14px rgba(197, 161, 90, 0.35);
+}
+
+.desk-entry-header {
+  text-align: center;
+  margin-bottom: 22px;
+}
+
+.desk-entry-date {
+  margin: 0 0 8px;
+  color: var(--accent);
+  font-size: 0.78rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+/* Headings keep the site's existing typography */
+.desk-entry-title {
+  margin: 0;
+  color: var(--accent);
+  font-size: clamp(1.25rem, 2.2vw, 1.55rem);
+  line-height: 1.4;
+}
+
+/* The Merchant's own hand — used only for the entries themselves */
+.desk-entry-body,
+.desk-entry-signoff {
+  font-family: "Caveat", "Segoe Script", "Bradley Hand", cursive;
+  font-size: clamp(1.35rem, 1rem + 0.9vw, 1.6rem);
+  line-height: 1.75;
+  letter-spacing: 0.012em;
+  color: #F6EDDA;
+}
+
+.desk-entry-body p {
+  margin: 0 0 18px;
+  max-width: none;
+  text-align: left;
+}
+
+.desk-entry-body p:last-child {
+  margin-bottom: 0;
+}
+
+.desk-entry-signoff {
+  margin: 26px 0 0;
+  text-align: right;
+  color: var(--muted);
+}
+
+/* Reserved for a future pinned entry (Merchant Dashboard) */
+.desk-entry--pinned {
+  border-color: rgba(197, 161, 90, 0.5);
+  box-shadow:
+    0 22px 54px rgba(0, 0, 0, 0.4),
+    inset 0 0 60px rgba(0, 0, 0, 0.16),
+    0 0 0 1px rgba(197, 161, 90, 0.14);
+}
+
+.desk-entry-pinned-note {
+  display: block;
+  margin-bottom: 10px;
+  color: var(--accent-hover);
+  font-size: 0.8rem;
+  font-style: italic;
+  letter-spacing: 0.08em;
+}
+
+.desk-closing {
+  margin-top: 32px;
+  font-style: italic;
+  font-size: 0.92rem;
+  opacity: 0.85;
+}
+
+/* Gentle fade-in on scroll — only armed once JavaScript is present,
+   so entries are never left invisible if the script fails to run. */
+.desk-entries.reveal-ready .desk-entry {
+  opacity: 0;
+  transition: opacity 0.9s ease, transform 0.9s ease, box-shadow 0.45s ease, border-color 0.45s ease;
+}
+
+.desk-entries.reveal-ready .desk-entry:nth-child(odd) {
+  transform: rotate(-0.35deg) translateY(22px);
+}
+
+.desk-entries.reveal-ready .desk-entry:nth-child(even) {
+  transform: rotate(0.4deg) translateY(22px);
+}
+
+.desk-entries.reveal-ready .desk-entry.is-visible:nth-child(odd) {
+  opacity: 1;
+  transform: rotate(-0.35deg);
+}
+
+.desk-entries.reveal-ready .desk-entry.is-visible:nth-child(even) {
+  opacity: 1;
+  transform: rotate(0.4deg);
+}
+
+@media (max-width: 680px) {
+  .desk-section {
+    margin-top: 48px;
+  }
+
+  .desk-entries {
+    gap: 26px;
+  }
+
+  .desk-entry {
+    padding: 40px 22px 28px;
+  }
+
+  /* Straighten the pages on small screens so nothing crowds the edges */
+  .desk-entry:nth-child(odd),
+  .desk-entry:nth-child(even),
+  .desk-entries.reveal-ready .desk-entry.is-visible:nth-child(odd),
+  .desk-entries.reveal-ready .desk-entry.is-visible:nth-child(even) {
+    transform: rotate(0deg);
+  }
+
+  .desk-entries.reveal-ready .desk-entry:nth-child(odd),
+  .desk-entries.reveal-ready .desk-entry:nth-child(even) {
+    transform: translateY(18px);
+  }
+
+  .desk-entry:hover,
+  .desk-entry:focus-within {
+    transform: translateY(-3px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .desk-entry,
+  .desk-entries.reveal-ready .desk-entry {
+    transition: none;
+  }
+
+  .desk-entries.reveal-ready .desk-entry,
+  .desk-entries.reveal-ready .desk-entry.is-visible {
+    opacity: 1;
+  }
+
+  .desk-entry:hover,
+  .desk-entry:focus-within {
+    transform: none;
+  }
+
+  .desk-entries.reveal-ready .desk-entry:nth-child(odd),
+  .desk-entries.reveal-ready .desk-entry.is-visible:nth-child(odd) {
+    transform: rotate(-0.35deg);
+  }
+
+  .desk-entries.reveal-ready .desk-entry:nth-child(even),
+  .desk-entries.reveal-ready .desk-entry.is-visible:nth-child(even) {
+    transform: rotate(0.4deg);
+  }
+}
