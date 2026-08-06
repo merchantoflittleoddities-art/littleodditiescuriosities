@@ -650,6 +650,264 @@ function attachCartRowHandlers(container) {
 
 
 // ============================================================
+// Helpful Pages search
+// Lets the shop search return informational pages alongside
+// treasures. Purely additive — product results are untouched.
+// ============================================================
+
+/** Informational pages the search can surface, with the words travellers use to look for them */
+const HELPFUL_PAGES = [
+  {
+    icon: "🕯️",
+    title: "Merchant's Guide",
+    url: "merchants-guide.html",
+    blurb: "Answers on shipping, returns, refunds, bracelet sizes and caring for your treasure.",
+    keywords: [
+      "merchant", "merchants guide", "merchant's guide", "guide", "help", "helpful", "faq",
+      "faqs", "question", "questions", "answers", "support", "advice", "info", "information",
+      "return", "returns", "refund", "refunds", "exchange", "exchanges", "cancel", "problem",
+      "shipping", "delivery", "postage", "courier", "dispatch", "tracking", "tracked", "parcel",
+      "arrive", "arrival", "how long", "lost", "damaged", "size", "sizes", "sizing",
+      "bracelet size", "bracelet sizes", "measure", "measurement", "fit", "care", "cleaning",
+      "policy", "policies", "terms", "handmade", "materials", "payment", "orders"
+    ]
+  },
+  {
+    icon: "💌",
+    title: "Send Word to the Merchant",
+    url: "contact.html",
+    blurb: "Send a letter to the Merchant with any question, request or curious idea.",
+    keywords: [
+      "contact", "contact us", "send word", "word", "letter", "write", "email", "e-mail",
+      "mail", "message", "messages", "get in touch", "touch", "reach", "reach out", "ask",
+      "enquiry", "enquiries", "inquiry", "question", "support", "help", "custom", "commission",
+      "bespoke", "request", "complaint", "instagram", "social", "talk", "speak", "reply"
+    ]
+  },
+  {
+    icon: "🗄️",
+    title: "Curiosity Cabinet",
+    url: "cabinet.html",
+    blurb: "The treasures you have gathered so far, ready for their journey home.",
+    keywords: [
+      "cabinet", "curiosity cabinet", "curiosity", "curiosities", "inventory", "archive",
+      "archives", "collection", "gathered", "basket", "bag", "cart", "trolley", "saved",
+      "my items", "my treasures", "purchase", "buy", "checkout", "pay", "order", "total"
+    ]
+  },
+  {
+    icon: "📦",
+    title: "Collections",
+    url: "collections.html",
+    blurb: "Every themed range — haunted love, enchanted forest, forgotten treasures and more.",
+    keywords: [
+      "collections", "collection", "range", "ranges", "theme", "themes", "themed", "series",
+      "sets", "categories", "category", "browse", "explore", "haunted", "haunted love",
+      "enchanted", "enchanted forest", "forest", "forgotten", "forgotten treasures",
+      "little miracles", "miracles"
+    ]
+  },
+  {
+    icon: "ℹ️",
+    title: "About",
+    url: "about.html",
+    blurb: "Meet the Merchant and hear the story behind Little Oddities Curiosities.",
+    keywords: [
+      "about", "about us", "story", "our story", "history", "who", "who are you", "meet",
+      "meet the merchant", "business", "brand", "shop", "maker", "creator", "artist",
+      "handmade", "craft", "workshop", "values", "mission", "behind the scenes"
+    ]
+  },
+  {
+    icon: "⭐",
+    title: "Traveller Reviews",
+    url: "reviews.html",
+    blurb: "Words from fellow travellers who have welcomed a treasure into their story.",
+    keywords: [
+      "review", "reviews", "traveller reviews", "feedback", "rating", "ratings", "stars",
+      "star", "testimonial", "testimonials", "comments", "opinions", "experiences",
+      "recommend", "recommendations", "trust", "happy customers", "customers"
+    ]
+  },
+  {
+    icon: "🛍",
+    title: "Shop the Cabinet",
+    url: "shop.html",
+    blurb: "Every handmade treasure in one place, filterable by collection and tier.",
+    keywords: [
+      "shop", "store", "browse", "all products", "products", "treasures", "treasure",
+      "catalogue", "catalog", "search", "buy", "stock", "available", "new", "bracelet",
+      "bracelets", "jewellery", "jewelry", "gift", "gifts"
+    ]
+  },
+  {
+    icon: "✦",
+    title: "Treasure Tiers",
+    url: "tiers.html",
+    blurb: "The tiers of wonder, and what each level of treasure includes.",
+    keywords: [
+      "tier", "tiers", "treasure tiers", "price", "prices", "pricing", "cost", "costs",
+      "how much", "budget", "cheap", "expensive", "levels", "level", "value", "packages"
+    ]
+  },
+  {
+    icon: "🏰",
+    title: "Home",
+    url: "index.html",
+    blurb: "Return to the front of the shop and start the journey again.",
+    keywords: ["home", "homepage", "front page", "start", "main page", "beginning", "welcome"]
+  }
+];
+
+/** Very common words that should never drive a page match on their own */
+const HELPFUL_PAGE_STOPWORDS = new Set([
+  "the", "a", "an", "and", "or", "of", "to", "for", "my", "me", "i", "is", "it", "in", "on",
+  "at", "be", "do", "does", "did", "can", "you", "your", "with", "any", "some", "please",
+  "what", "when", "where", "which", "who", "why", "how", "get", "got", "are", "was", "have"
+]);
+
+/** Escapes text before it is placed inside generated markup */
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/** Lowercases and strips punctuation so "Merchant's Guide?" and "merchants guide" match */
+function normalizeSearchText(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[’']/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+/** Scores a single word against one keyword; allows light stemming so "refunds" finds "refund" */
+function scoreWordAgainstKeyword(word, keyword) {
+  if (word === keyword) return 6;
+  if (word.length < 4) return 0;
+  if (keyword.split(" ").includes(word)) return 5;
+  if (keyword.startsWith(word) || word.startsWith(keyword)) return 4;
+  if (keyword.includes(word)) return 2;
+  return 0;
+}
+
+/**
+ * Ranks the informational pages against a free-text query.
+ * Matches whole phrases, individual words, page titles, blurbs and — for the
+ * Merchant's Guide — the questions already loaded from merchants-guide.json.
+ * Returns the best matches, highest score first.
+ */
+function searchHelpfulPages(query, limit = 4) {
+  const phrase = normalizeSearchText(query);
+  if (phrase.length < 2) return [];
+
+  const words = phrase
+    .split(" ")
+    .filter((word) => word.length > 1 && !HELPFUL_PAGE_STOPWORDS.has(word));
+  const searchTerms = words.length ? words : [phrase];
+
+  const guideEntries = window.ALL_MERCHANT_GUIDE?.merchantGuide || [];
+
+  return HELPFUL_PAGES
+    .map((page) => {
+      const normalizedTitle = normalizeSearchText(page.title);
+      const normalizedBlurb = normalizeSearchText(page.blurb);
+      const keywords        = page.keywords.map(normalizeSearchText);
+
+      let score = 0;
+      let matchedQuestion = "";
+
+      // Whole-phrase matches are the strongest signal
+      if (normalizedTitle === phrase || keywords.includes(phrase)) score += 14;
+      else if (normalizedTitle.includes(phrase)) score += 10;
+      else if (phrase.length >= 3 && keywords.some((k) => k.includes(phrase))) score += 8;
+
+      // Then each meaningful word from the query
+      searchTerms.forEach((word) => {
+        if (normalizedTitle.split(" ").includes(word)) score += 5;
+        else if (word.length >= 4 && normalizedTitle.includes(word)) score += 3;
+
+        const keywordScore = keywords.reduce(
+          (best, keyword) => Math.max(best, scoreWordAgainstKeyword(word, keyword)),
+          0
+        );
+        score += keywordScore;
+
+        if (!keywordScore && word.length >= 4 && normalizedBlurb.includes(word)) score += 2;
+      });
+
+      // The Merchant's Guide also answers to its own FAQ questions
+      if (page.url === "merchants-guide.html" && guideEntries.length) {
+        guideEntries.forEach((entry) => {
+          const question = normalizeSearchText(entry.question);
+          const hit = searchTerms.some((word) => word.length >= 4 && question.includes(word));
+          if (!hit) return;
+          score += 4;
+          if (!matchedQuestion) matchedQuestion = entry.question;
+        });
+      }
+
+      return { ...page, score, matchedQuestion };
+    })
+    .filter((page) => page.score > 0)
+    .sort((a, b) => b.score - a.score || a.title.localeCompare(b.title))
+    .slice(0, limit);
+}
+
+/** Renders the Helpful Pages results for the current search term */
+function renderHelpfulPages(query) {
+  const container = document.querySelector("#helpful-pages-results");
+  if (!container) return;
+
+  const trimmed = String(query || "").trim();
+
+  if (!trimmed) {
+    container.innerHTML =
+      `<p class="muted">Search for topics like shipping, contact, merchant, forest, or haunted.</p>`;
+    return;
+  }
+
+  const matches = searchHelpfulPages(trimmed);
+
+  if (!matches.length) {
+    container.innerHTML = `
+      <p class="muted">The Merchant found no guidance for “${escapeHtml(trimmed)}”.
+      Try <em>shipping</em>, <em>returns</em>, <em>contact</em> or <em>reviews</em>.</p>
+    `;
+    return;
+  }
+
+  container.innerHTML = `
+    <p class="results-text helpful-pages-summary">
+      Showing <strong>${matches.length}</strong> ${matches.length === 1 ? "page" : "pages"}
+      for “${escapeHtml(trimmed)}”.
+    </p>
+    <ul class="helpful-pages-list">
+      ${matches.map((page) => `
+        <li>
+          <a class="helpful-page-link" href="${page.url}">
+            <span class="helpful-page-icon" aria-hidden="true">${page.icon}</span>
+            <span class="helpful-page-copy">
+              <span class="helpful-page-title">${escapeHtml(page.title)}</span>
+              <span class="helpful-page-blurb">${escapeHtml(page.blurb)}</span>
+              ${page.matchedQuestion
+                ? `<span class="helpful-page-hint">Answers: ${escapeHtml(page.matchedQuestion)}</span>`
+                : ""}
+            </span>
+            <span class="helpful-page-arrow" aria-hidden="true">→</span>
+          </a>
+        </li>
+      `).join("")}
+    </ul>
+  `;
+}
+
+
+// ============================================================
 // Page renderers
 // ============================================================
 
@@ -738,6 +996,9 @@ function renderShopPage(products) {
     renderProductsGrid(filtered, ".product-grid");
     const counter = document.querySelector("#shop-results-count");
     if (counter) counter.textContent = filtered.length;
+
+    /* Informational pages matching the same search term */
+    renderHelpfulPages(searchValue);
   }
 
   if (collectionFilter) collectionFilter.addEventListener("change", filterProducts);
