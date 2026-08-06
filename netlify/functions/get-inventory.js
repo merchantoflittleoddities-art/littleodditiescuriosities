@@ -23,10 +23,14 @@
    so all products appear available by default.
    ============================================================= */
 
-const { getStore } = require("@netlify/blobs");
+const { connectLambda, getStore } = require("@netlify/blobs");
 
-exports.handler = async function () {
+exports.handler = async function (event) {
   try {
+    /* V1 (Lambda-compat) functions must hand the request event to the
+       Blobs client so it can pick up the site's blob credentials. */
+    connectLambda(event);
+
     const store     = getStore("inventory");
     const raw       = await store.get("all", { type: "text" });
     const inventory = raw ? JSON.parse(raw) : {};
