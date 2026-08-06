@@ -13,6 +13,7 @@ const COLLECTIONS_PATH     = "./data/collections.json";
 const TIERS_PATH           = "./data/tiers.json";
 const MERCHANTS_GUIDE_PATH = "./data/merchants-guide.json";
 const DESK_ENTRIES_PATH    = "./data/desk-entries.json";
+const FEATURED_TREASURE_PATH = "./data/featured-treasure.json";
 const INVENTORY_URL        = "/.netlify/functions/get-inventory";
 const IMAGE_ROOT           = "assets/images/products";
 const FREE_SHIPPING_THRESHOLD = 30;
@@ -52,6 +53,13 @@ const DEFAULT_DESK_ENTRIES = {
   closingNote: "",
   settings: { homepageLimit: 3 },
   entries: []
+};
+const DEFAULT_FEATURED_TREASURE = {
+  title: "✨ Featured Treasure",
+  intro: "",
+  closingNote: "",
+  settings: { showWhenOutOfStock: true },
+  features: []
 };
 const DEFAULT_SETTINGS = {
   shop: {
@@ -390,6 +398,91 @@ function compareDeskEntries(a, b) {
   if (!Number.isNaN(dateA) && !Number.isNaN(dateB) && dateA !== dateB) return dateB - dateA;
 
   return (Number(a.displayOrder) || 0) - (Number(b.displayOrder) || 0);
+}
+
+/**
+ * ✨ Featured Treasure
+ * Loads the curiosity the Merchant has set aside. Exactly like the desk,
+ * treasures that are still drafts, still scheduled, or whose moment has
+ * passed are filtered out here — so a future Merchant Dashboard only ever
+ * has to write this data file, never touch the homepage.
+ */
+async function loadFeaturedTreasure() {
+  try {
+    const response = await fetch(FEATURED_TREASURE_PATH, { cache: "no-store" });
+    if (!response.ok) throw new Error("The Merchant's chosen treasure could not be reached.");
+    const data = await response.json();
+    const source = (typeof data === "object" && data !== null) ? data : {};
+    const features = Array.isArray(source.features)
+      ? source.features
+      : Array.isArray(source) ? source : [];
+
+    const normalized = {
+      ...DEFAULT_FEATURED_TREASURE,
+      ...source,
+      settings: { ...DEFAULT_FEATURED_TREASURE.settings, ...(source.settings || {}) },
+      features: features.filter(isFeaturedTreasureVisible).sort(compareFeaturedTreasures)
+    };
+
+    window.FEATURED_TREASURE = normalized;
+    return normalized;
+  } catch (e) {
+    window.FEATURED_TREASURE = DEFAULT_FEATURED_TREASURE;
+    return DEFAULT_FEATURED_TREASURE;
+  }
+}
+
+/**
+ * A treasure is on display once it is published, its moment has arrived,
+ * and that moment has not yet passed.
+ */
+function isFeaturedTreasureVisible(feature) {
+  if (!feature || typeof feature !== "object") return false;
+
+  const status = String(feature.status || "published").toLowerCase();
+  if (status === "draft" || status === "hidden" || status === "archived") return false;
+
+  const startsAt = feature.publishAt ? Date.parse(feature.publishAt) : NaN;
+  if (!Number.isNaN(startsAt) && startsAt > Date.now()) return false;
+  if (status === "scheduled" && Number.isNaN(startsAt)) return false;
+
+  const endsAt = feature.expiresAt ? Date.parse(feature.expiresAt) : NaN;
+  if (!Number.isNaN(endsAt) && endsAt <= Date.now()) return false;
+
+  return true;
+}
+
+/**
+ * A pinned treasure — a seasonal choice, say — always takes the place of honour.
+ * Otherwise the most recently chosen treasure wins, then display order.
+ */
+function compareFeaturedTreasures(a, b) {
+  if (Boolean(a.pinned) !== Boolean(b.pinned)) return a.pinned ? -1 : 1;
+
+  const dateA = Date.parse(a.publishAt || a.date || "");
+  const dateB = Date.parse(b.publishAt || b.date || "");
+  if (!Number.isNaN(dateA) && !Number.isNaN(dateB) && dateA !== dateB) return dateB - dateA;
+
+  return (Number(a.displayOrder) || 0) - (Number(b.displayOrder) || 0);
+}
+
+/**
+ * Joins the Merchant's choice to the treasure itself.
+ * The catalogue stays the single source of truth for name, price and imagery;
+ * the featured data carries only the Merchant's own words about it.
+ * Returns null when nothing has been chosen, or the chosen treasure has left the cabinet.
+ */
+function resolveFeaturedTreasure() {
+  const featured = window.FEATURED_TREASURE || DEFAULT_FEATURED_TREASURE;
+  const feature  = (featured.features || [])[0];
+  if (!feature) return null;
+
+  const product = getAllProducts().find((item) => item.id === feature.productId);
+  if (!product) return null;
+
+  if (featured.settings?.showWhenOutOfStock === false && !isProductAvailable(product.id)) return null;
+
+  return { featured, feature, product };
 }
 
 async function loadSettings() {
@@ -972,6 +1065,146 @@ function renderHelpfulPages(query) {
 
 
 // ============================================================
+// ✨ Featured Treasure
+// ============================================================
+
+/**
+ * Places the Merchant's chosen curiosity in its position of honour.
+ * The markup produced here matches the fallback markup in index.html,
+ * so the choice can change without the layout or the styles changing with it.
+ */
+function renderFeaturedTreasure() {
+  const section = document.querySelector("#featured-treasure");
+  if (!section) return;
+
+  const chosen = resolveFeaturedTreasure();
+
+  // The Merchant has set nothing aside — take the shelf down rather than
+  // leave an empty frame where a treasure should be.
+  if (!chosen) {
+    section.hidden = true;
+    return;
+  }
+
+  const { featured, feature, product } = chosen;
+  const stage = section.querySelector(".featured-treasure-stage");
+  if (stage) stage.innerHTML = buildFeaturedTreasure(feature, product);
+
+  const heading = section.querySelector(".featured-treasure-heading");
+  if (heading && featured.title) heading.textContent = featured.title;
+
+  const intro = section.querySelector(".featured-treasure-intro");
+  if (intro) {
+    intro.textContent = featured.intro || "";
+    intro.hidden = !featured.intro;
+  }
+
+  const closing = section.querySelector(".featured-treasure-closing");
+  if (closing) {
+    closing.textContent = featured.closingNote || "";
+    closing.hidden = !featured.closingNote;
+  }
+
+  observeFeaturedTreasure(section);
+}
+
+function buildFeaturedTreasure(feature, product) {
+  const hasImage  = Array.isArray(product.images) && product.images.length;
+  const imageSrc  = hasImage ? `${IMAGE_ROOT}/${product.id}/${product.images[0]}` : "";
+  const imageAlt  = feature.imageAlt || `${product.name} — a handmade curiosity from Little Oddities Curiosities.`;
+  const eyebrow   = feature.eyebrow || "Set aside by the Merchant";
+  const ctaLabel  = feature.ctaLabel || "View This Treasure";
+  const seasonal  = String(feature.seasonal || "").trim();
+
+  const noteParagraphs = Array.isArray(feature.merchantNote)
+    ? feature.merchantNote
+    : String(feature.merchantNote || "").split(/\n{2,}/);
+
+  const note = noteParagraphs
+    .filter((paragraph) => String(paragraph).trim())
+    .map((paragraph) => `<p>${escapeHtml(String(paragraph).trim())}</p>`)
+    .join("");
+
+  const signoff = String(feature.signoff || "").trim();
+
+  const available = isProductAvailable(product.id);
+  const lowStock  = available && isProductLowStock(product.id);
+  const stockNotice = !available
+    ? `<p class="stock-notice stock-notice--out">${escapeHtml(getOutOfStockMessage(product.id))}</p>`
+    : lowStock
+    ? `<p class="stock-notice stock-notice--low">⚠️ Only a few treasures remain.</p>`
+    : "";
+
+  return `
+    <article class="featured-treasure">
+      <span class="featured-treasure-sparkle featured-treasure-sparkle--start" aria-hidden="true">✦</span>
+      <span class="featured-treasure-sparkle featured-treasure-sparkle--end" aria-hidden="true">✦</span>
+
+      <div class="featured-treasure-frame">
+        ${hasImage
+          ? `<img class="featured-treasure-image" src="${escapeHtml(imageSrc)}" alt="${escapeHtml(imageAlt)}" loading="lazy" decoding="async"
+               onload="this.parentElement.querySelector('.featured-treasure-placeholder')?.style.setProperty('display','none');"
+               onerror="this.style.display='none';">`
+          : ""}
+        <p class="featured-treasure-placeholder">A photograph of this treasure will appear soon.</p>
+      </div>
+
+      <div class="featured-treasure-copy">
+        <p class="featured-treasure-eyebrow">
+          ${escapeHtml(eyebrow)}${seasonal ? ` <span class="featured-treasure-season">· ${escapeHtml(seasonal)}</span>` : ""}
+        </p>
+        <h3 class="featured-treasure-name">${escapeHtml(product.name)}</h3>
+        <p class="featured-treasure-description">${escapeHtml(product.description || "Details of this treasure will follow shortly.")}</p>
+
+        <p class="featured-treasure-meta">
+          <span class="muted">${escapeHtml(product.tier || "")}</span>
+          <span>${escapeHtml(product.collection || "")}</span>
+        </p>
+
+        <p class="featured-treasure-price">
+          <span class="featured-treasure-price-label">Price</span>
+          ${escapeHtml(formatPrice(getProductPrice(product)))}
+        </p>
+        ${stockNotice}
+
+        ${note ? `<div class="featured-treasure-note">${note}</div>` : ""}
+        ${signoff ? `<p class="featured-treasure-signoff">${escapeHtml(signoff).replace(/\n/g, "<br>")}</p>` : ""}
+
+        <div class="featured-treasure-actions">
+          <a class="button button-primary" href="product.html?id=${encodeURIComponent(product.id)}">
+            ${escapeHtml(ctaLabel)}
+          </a>
+        </div>
+      </div>
+    </article>
+  `;
+}
+
+/** The treasure settles gently into view as the traveller reaches it. */
+function observeFeaturedTreasure(section) {
+  const treasure = section.querySelector(".featured-treasure");
+  if (!treasure) return;
+
+  if (typeof IntersectionObserver !== "function") {
+    treasure.classList.add("is-visible");
+    return;
+  }
+
+  section.classList.add("reveal-ready");
+
+  const observer = new IntersectionObserver((records, self) => {
+    records.forEach((record) => {
+      if (!record.isIntersecting) return;
+      record.target.classList.add("is-visible");
+      self.unobserve(record.target);
+    });
+  }, { threshold: 0.15, rootMargin: "0px 0px -40px 0px" });
+
+  observer.observe(treasure);
+}
+
+
+// ============================================================
 // 🕯️ From the Merchant's Desk
 // ============================================================
 
@@ -1106,6 +1339,9 @@ function renderHomePage(products) {
       `)
       .join("");
   }
+
+  // The curiosity the Merchant has set aside
+  renderFeaturedTreasure();
 
   // Notes left upon the Merchant's desk
   renderDeskEntries();
@@ -1768,6 +2004,7 @@ function initPage() {
     loadTiers(),
     loadMerchantGuide(),
     loadDeskEntries(),
+    loadFeaturedTreasure(),
     loadInventory()        /* fetch live stock levels before rendering any products */
   ]).then(([settings, products]) => {
     renderGlobalSettings();
