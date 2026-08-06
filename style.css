@@ -816,3 +816,107 @@ textarea {
   }
 
 }
+
+/* Helpful Pages search results */
+
+.helpful-pages-summary {
+  margin: 0 0 16px;
+  font-size: 0.95rem;
+}
+
+/* Scoped so the results read left-aligned inside the centred section wrapper */
+#helpful-pages-results p {
+  max-width: none;
+  margin: 0 0 16px;
+  text-align: left;
+}
+
+#helpful-pages-results p:last-child {
+  margin-bottom: 0;
+}
+
+.helpful-pages-list {
+  list-style: none;
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+}
+
+.helpful-pages-list li {
+  margin: 0;
+}
+
+.helpful-page-link {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 18px;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: var(--surface-soft);
+  color: var(--text);
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+}
+
+.helpful-page-link:hover,
+.helpful-page-link:focus-visible {
+  border-color: var(--accent);
+  background: rgba(197, 161, 90, 0.14);
+  transform: translateY(-2px);
+}
+
+.helpful-page-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.helpful-page-copy {
+  display: grid;
+  gap: 4px;
+  flex: 1;
+}
+
+.helpful-page-title {
+  color: var(--accent);
+  font-size: 1.05rem;
+}
+
+.helpful-page-blurb {
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.helpful-page-hint {
+  color: var(--accent-hover);
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+.helpful-page-arrow {
+  color: var(--accent);
+  flex-shrink: 0;
+  opacity: 0.7;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.helpful-page-link:hover .helpful-page-arrow,
+.helpful-page-link:focus-visible .helpful-page-arrow {
+  transform: translateX(4px);
+  opacity: 1;
+}
+
+@media (max-width: 768px) {
+
+  .helpful-page-link {
+    padding: 14px;
+    gap: 12px;
+  }
+
+  .helpful-page-arrow {
+    display: none;
+  }
+
+}
