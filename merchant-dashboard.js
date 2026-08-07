@@ -421,16 +421,18 @@ let allInventory = {};
 /** Cached products array from catalogue.json */
 let allProducts  = [];
 
-const STOREFRONT_MESSAGES = {
-  // Available State Messages
-  workshop:  { label: "⚒️ In the workshop...", type: "available" },
-  shelves:   { label: "📦 Upon the shelves...", type: "available" },
-  remaining: { label: "⚠️ Only {stock} remain...", type: "available" },
-  request:   { label: "📜 Upon traveller's request...", type: "available" },
-  // Unavailable / Out of Stock Messages
-  roaming:   { label: "🕯️ Roaming the land...", type: "unavailable" },
-  returning: { label: "🌙 Returning before long...", type: "unavailable" },
-  bespoke:   { label: "✦ Available to order...", type: "unavailable" }
+const AVAILABLE_STOREFRONT_MESSAGES = {
+  available: "Available",
+  workshop:  "The Merchant has this in the workshop.",
+  shelves:   "The Merchant has this upon the shelves.",
+  remaining: "Only {stock} remain upon the shelves.",
+  request:   "The Merchant can make this upon a traveller's request."
+};
+
+const UNAVAILABLE_STOREFRONT_MESSAGES = {
+  roaming:   "Roaming the Land.",
+  returning: "Returning Before Long.",
+  bespoke:   "Available to Order."
 };
 
 async function fetchInventory() {
@@ -476,14 +478,14 @@ async function postInventoryUpdate(action, productId, value) {
   renderInventoryStats(allProducts, allInventory);
 }
 
-/** Resolve stock status for a single product */
+/** Resolve stock status for a single product — calculated strictly from Availability, Stock, and Low Stock threshold */
 function resolveStockStatus(productId) {
   const inv = allInventory[productId];
   if (!inv)                          return "unlimited";
   if (inv.available === false)       return "off";
   if (inv.stock === null)            return "unlimited";
   if (inv.stock === 0)               return "out";
-  if (inv.stock <= (inv.lowStockThreshold || 3)) return "low";
+  if (inv.stock <= (inv.lowStockThreshold ?? 3)) return "low";
   return "in";
 }
 
@@ -541,51 +543,30 @@ function renderInventoryTable(products, inventory, query = "", statusFilter = ""
     return;
   }
 
-  /* Build the per-product message map before writing innerHTML so we can
-     reliably restore each select's value afterwards.  Browsers do not always
-     honour the `selected` attribute on <option> elements that are created
-     through innerHTML — they may carry over the last user-interaction value
-     from the previous render, making every product appear to share the same
-     Out of Stock Message.  Setting select.value explicitly after the DOM is
-     written is the authoritative fix. */
-  const productMsgKeys = {};
-  filtered.forEach((p) => {
-    const inv = inventory[p.id] || {};
-    productMsgKeys[p.id] = inv.storefrontMessage || inv.outOfStockMessage || "shelves";
-  });
-
   tbody.innerHTML = filtered.map((product) => {
     const inv     = inventory[product.id] || {};
     const stock   = inv.stock ?? null;
     const status  = resolveStockStatus(product.id);
     const badge   = stockBadgeHtml(status, stock);
-    const msgKey  = inv.storefrontMessage || inv.outOfStockMessage || "shelves";
     const avail   = inv.available !== false;
+
+    const availMsgKey = inv.availableStorefrontMessage || inv.availableMessage || (inv.storefrontMessage in AVAILABLE_STOREFRONT_MESSAGES ? inv.storefrontMessage : "shelves");
+    const unavailMsgKey = inv.unavailableStorefrontMessage || inv.unavailableMessage || (inv.storefrontMessage in UNAVAILABLE_STOREFRONT_MESSAGES ? inv.storefrontMessage : "roaming");
 
     const hasImage = Array.isArray(product.images) && product.images.length;
     const imgHtml  = hasImage
       ? `<img class="inv-product-img" src="assets/images/products/${product.id}/${product.images[0]}" alt="${escapeHtml(product.name)}" onerror="this.style.display='none'">`
       : `<div class="inv-product-img-placeholder">${escapeHtml(product.icon || "✦")}</div>`;
 
-    /* Build message selector grouped by available and unavailable messages */
-    const availableMsgOptions = Object.entries(STOREFRONT_MESSAGES)
-      .filter(([, m]) => m.type === "available")
-      .map(([k, m]) => `<option value="${k}"${k === msgKey ? " selected" : ""}>${m.label.replace("{stock}", stock !== null ? stock : "∞")}</option>`)
+    /* Separate Available messages options */
+    const availableMsgOptions = Object.entries(AVAILABLE_STOREFRONT_MESSAGES)
+      .map(([k, label]) => `<option value="${k}"${k === availMsgKey ? " selected" : ""}>${label.replace("{stock}", stock !== null ? stock : "∞")}</option>`)
       .join("");
 
-    const unavailableMsgOptions = Object.entries(STOREFRONT_MESSAGES)
-      .filter(([, m]) => m.type === "unavailable")
-      .map(([k, m]) => `<option value="${k}"${k === msgKey ? " selected" : ""}>${m.label}</option>`)
+    /* Separate Unavailable messages options */
+    const unavailableMsgOptions = Object.entries(UNAVAILABLE_STOREFRONT_MESSAGES)
+      .map(([k, label]) => `<option value="${k}"${k === unavailMsgKey ? " selected" : ""}>${label}</option>`)
       .join("");
-
-    const msgOptions = `
-      <optgroup label="Available Messages">
-        ${availableMsgOptions}
-      </optgroup>
-      <optgroup label="Unavailable Messages">
-        ${unavailableMsgOptions}
-      </optgroup>
-    `;
 
     return `
       <tr data-product-id="${product.id}">
@@ -622,43 +603,34 @@ function renderInventoryTable(products, inventory, query = "", statusFilter = ""
                  title="Show low stock warning when stock falls to this number">
         </td>
         <td>
-          <select class="message-select"
-                  data-action="setMessage"
-                  data-product-id="${product.id}">
-            ${msgOptions}
-          </select>
+          <!-- SECTION 1: Availability -->
+          <div class="avail-btn-group" data-selected-avail="${avail ? "true" : "false"}">
+            <button type="button" class="btn-toggle-avail ${avail ? "active" : ""}" data-avail-toggle="true" data-product-id="${product.id}">Available</button>
+            <button type="button" class="btn-toggle-avail ${!avail ? "active" : ""}" data-avail-toggle="false" data-product-id="${product.id}">Unavailable</button>
+          </div>
+          <button type="button" class="btn-secondary btn-save-action" data-action="saveAvailability" data-product-id="${product.id}">Save Availability</button>
         </td>
         <td>
-          ${avail
-            ? `<button class="btn-secondary" style="font-size:0.8rem;padding:0.4rem 0.8rem;"
-                       data-action="setAvailable" data-product-id="${product.id}" data-value="false">
-                 Mark Unavailable
-               </button>`
-            : `<button class="btn-secondary" style="font-size:0.8rem;padding:0.4rem 0.8rem;color:var(--status-completed);border-color:var(--status-completed);"
-                       data-action="setAvailable" data-product-id="${product.id}" data-value="true">
-                 Restore
-               </button>`}
+          <!-- SECTION 2: Storefront Message -->
+          <div class="msg-category-group">
+            <div class="msg-category">
+              <label class="msg-label">AVAILABLE Messages</label>
+              <select class="message-select msg-select-avail" data-product-id="${product.id}">
+                ${availableMsgOptions}
+              </select>
+            </div>
+            <div class="msg-category">
+              <label class="msg-label">UNAVAILABLE Messages</label>
+              <select class="message-select msg-select-unavail" data-product-id="${product.id}">
+                ${unavailableMsgOptions}
+              </select>
+            </div>
+            <button type="button" class="btn-secondary btn-save-action" data-action="saveMessage" data-product-id="${product.id}">Save Storefront Message</button>
+          </div>
         </td>
       </tr>
     `;
   }).join("");
-
-  const rows = tbody.querySelectorAll("tr[data-product-id]");
-  filtered.forEach((product, i) => {
-    const row = rows[i];
-    if (!row) return;
-    const productId = product.id;
-
-    row.setAttribute("data-product-id", productId);
-    row.querySelectorAll("[data-action]").forEach((el) => {
-      el.dataset.productId = productId;
-    });
-
-    const messageSelect = row.querySelector("select[data-action='setMessage']");
-    if (messageSelect) {
-      messageSelect.value = productMsgKeys[productId] || "shelves";
-    }
-  });
 
   renderInventoryStats(products, inventory);
 }
@@ -666,21 +638,26 @@ function renderInventoryTable(products, inventory, query = "", statusFilter = ""
 function exportInventoryCSV(products, inventory) {
   const headers = [
     "Treasure", "Collection", "Stock", "Status", "Low Stock Threshold",
-    "Storefront Message", "Available", "Last Updated"
+    "Available Message", "Unavailable Message", "Available", "Last Updated"
   ];
 
   const rows = products.map((p) => {
-    const inv    = inventory[p.id] || {};
+    const inv = inventory[p.id] || {};
     const status = resolveStockStatus(p.id);
-    const msgKey = inv.storefrontMessage || inv.outOfStockMessage || "shelves";
-    const msgDef = STOREFRONT_MESSAGES[msgKey] || STOREFRONT_MESSAGES.shelves;
+    const availMsgKey = inv.availableStorefrontMessage || inv.availableMessage || (inv.storefrontMessage in AVAILABLE_STOREFRONT_MESSAGES ? inv.storefrontMessage : "shelves");
+    const unavailMsgKey = inv.unavailableStorefrontMessage || inv.unavailableMessage || (inv.storefrontMessage in UNAVAILABLE_STOREFRONT_MESSAGES ? inv.storefrontMessage : "roaming");
+
+    const availLabel = AVAILABLE_STOREFRONT_MESSAGES[availMsgKey] || "The Merchant has this upon the shelves.";
+    const unavailLabel = UNAVAILABLE_STOREFRONT_MESSAGES[unavailMsgKey] || "Roaming the Land.";
+
     return [
       p.name,
       p.collection,
       inv.stock === null || inv.stock === undefined ? "Unlimited" : inv.stock,
       status,
       inv.lowStockThreshold ?? 3,
-      msgDef.label,
+      availLabel,
+      unavailLabel,
       inv.available !== false ? "Yes" : "No",
       inv.lastUpdated ? new Date(inv.lastUpdated).toLocaleDateString("en-GB") : "Never"
     ].map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",");
@@ -744,19 +721,28 @@ function initInventoryUI() {
     }
   });
 
+  /* Availability toggle button click (visual change before save) */
+  document.getElementById("inventory-table")?.addEventListener("click", (event) => {
+    const toggleBtn = event.target.closest("[data-avail-toggle]");
+    if (!toggleBtn) return;
+    const group = toggleBtn.closest(".avail-btn-group");
+    if (!group) return;
+    const isAvail = toggleBtn.dataset.availToggle;
+    group.dataset.selectedAvail = isAvail;
+    group.querySelectorAll("[data-avail-toggle]").forEach((b) => {
+      b.classList.toggle("active", b.dataset.availToggle === isAvail);
+    });
+  });
+
   /* Delegated: stock input changes (setStock, setThreshold) */
   document.getElementById("inventory-table")?.addEventListener("change", async (event) => {
     const input = event.target.closest("[data-action]");
     if (!input) return;
     const { action, productId } = input.dataset;
-    if (action !== "setStock" && action !== "setThreshold" && action !== "setMessage") return;
+    if (action !== "setStock" && action !== "setThreshold") return;
 
     const rawValue = input.value.trim();
-    const value    = action === "setMessage"
-      ? rawValue
-      : rawValue === ""
-      ? null
-      : Math.max(0, parseInt(rawValue, 10) || 0);
+    const value    = rawValue === "" ? null : Math.max(0, parseInt(rawValue, 10) || 0);
 
     try {
       await postInventoryUpdate(action, productId, value);
@@ -765,26 +751,48 @@ function initInventoryUI() {
     }
   });
 
-  /* Delegated: adjust buttons and availability toggles */
+  /* Delegated: adjust stock, save availability, and save storefront message */
   document.getElementById("inventory-table")?.addEventListener("click", async (event) => {
     const btn = event.target.closest("[data-action]");
     if (!btn || btn.tagName === "INPUT" || btn.tagName === "SELECT") return;
 
     const { action, productId } = btn.dataset;
-    let value = btn.dataset.value;
 
     if (action === "adjustStock") {
-      value = parseInt(value, 10) || 0;
-    } else if (action === "setAvailable") {
-      value = value === "true";
-    } else {
+      const value = parseInt(btn.dataset.value, 10) || 0;
+      try {
+        await postInventoryUpdate("adjustStock", productId, value);
+      } catch (error) { showToast(error.message); }
       return;
     }
 
-    try {
-      await postInventoryUpdate(action, productId, value);
-    } catch (error) {
-      showToast(error.message);
+    if (action === "saveAvailability") {
+      const row = btn.closest("tr");
+      const group = row?.querySelector(".avail-btn-group");
+      const selectedVal = group?.dataset.selectedAvail === "true";
+      try {
+        await postInventoryUpdate("setAvailable", productId, selectedVal);
+        showToast("Availability saved.");
+      } catch (error) { showToast(error.message); }
+      return;
+    }
+
+    if (action === "saveMessage") {
+      const row = btn.closest("tr");
+      const availSelect = row?.querySelector(".msg-select-avail");
+      const unavailSelect = row?.querySelector(".msg-select-unavail");
+
+      const availableStorefrontMessage = availSelect?.value || "shelves";
+      const unavailableStorefrontMessage = unavailSelect?.value || "roaming";
+
+      try {
+        await postInventoryUpdate("setMessage", productId, {
+          availableStorefrontMessage,
+          unavailableStorefrontMessage
+        });
+        showToast("Storefront Message saved.");
+      } catch (error) { showToast(error.message); }
+      return;
     }
   });
 }

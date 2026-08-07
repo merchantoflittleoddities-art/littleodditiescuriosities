@@ -558,57 +558,35 @@ function isProductLowStock(productId) {
 }
 
 /** Storefront Message registry and resolvers */
-const STOREFRONT_MESSAGES = {
-  // Unavailable messages
-  roaming: {
-    type: "unavailable",
-    getText: (stock) => "🕯️ The Merchant is roaming the land in search of this treasure."
-  },
-  returning: {
-    type: "unavailable",
-    getText: (stock) => "🌙 This treasure will return to the shelves before long."
-  },
-  bespoke: {
-    type: "unavailable",
-    getText: (stock) => "✦ This treasure is available to order — Send Word to the Merchant."
-  },
-  // Available messages
-  workshop: {
-    type: "available",
-    getText: (stock) => "⚒️ The Merchant has this in the workshop."
-  },
-  shelves: {
-    type: "available",
-    getText: (stock) => "📦 The Merchant has this upon the shelves."
-  },
-  remaining: {
-    type: "available",
-    getText: (stock) => (stock !== null && stock !== undefined)
-      ? `⚠️ Only ${stock} remain upon the shelves.`
-      : "⚠️ Only a few remain upon the shelves."
-  },
-  request: {
-    type: "available",
-    getText: (stock) => "📜 The Merchant can make this upon a traveller's request."
-  }
+const AVAILABLE_STOREFRONT_MESSAGES = {
+  available: (stock) => "Available",
+  workshop:  (stock) => "The Merchant has this in the workshop.",
+  shelves:   (stock) => "The Merchant has this upon the shelves.",
+  remaining: (stock) => (stock !== null && stock !== undefined)
+    ? `Only ${stock} remain upon the shelves.`
+    : "Only a few remain upon the shelves.",
+  request:   (stock) => "The Merchant can make this upon a traveller's request."
+};
+
+const UNAVAILABLE_STOREFRONT_MESSAGES = {
+  roaming:   (stock) => "Roaming the Land.",
+  returning: (stock) => "Returning Before Long.",
+  bespoke:   (stock) => "Available to Order."
 };
 
 /** Returns the resolved storefront message for a product */
 function getStorefrontMessage(productId) {
   const inv = getInventoryItem(productId);
   const available = isProductAvailable(productId);
-  const key = inv?.storefrontMessage || inv?.outOfStockMessage;
-  const msgDef = STOREFRONT_MESSAGES[key];
 
-  if (msgDef && ((available && msgDef.type === "available") || (!available && msgDef.type === "unavailable"))) {
-    return msgDef.getText(inv?.stock);
-  }
-
-  // Fallback based on availability state
   if (available) {
-    return STOREFRONT_MESSAGES.shelves.getText(inv?.stock);
+    const key = inv?.availableStorefrontMessage || inv?.availableMessage || (inv?.storefrontMessage in AVAILABLE_STOREFRONT_MESSAGES ? inv?.storefrontMessage : "shelves");
+    const msgFn = AVAILABLE_STOREFRONT_MESSAGES[key] || AVAILABLE_STOREFRONT_MESSAGES.shelves;
+    return msgFn(inv?.stock);
   } else {
-    return STOREFRONT_MESSAGES.roaming.getText(inv?.stock);
+    const key = inv?.unavailableStorefrontMessage || inv?.unavailableMessage || (inv?.storefrontMessage in UNAVAILABLE_STOREFRONT_MESSAGES ? inv?.storefrontMessage : "roaming");
+    const msgFn = UNAVAILABLE_STOREFRONT_MESSAGES[key] || UNAVAILABLE_STOREFRONT_MESSAGES.roaming;
+    return msgFn(inv?.stock);
   }
 }
 
