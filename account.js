@@ -19,8 +19,9 @@ const FORGOT_PASSWORD_URL  = "/.netlify/functions/customer-forgot-password";
 const RESET_PASSWORD_URL   = "/.netlify/functions/customer-reset-password";
 const PROFILE_URL          = "/.netlify/functions/customer-profile";
 const ADDRESSES_URL        = "/.netlify/functions/customer-addresses";
-const WISHLIST_URL         = "/.netlify/functions/customer-wishlist";
 const CUSTOMER_ORDERS_URL  = "/.netlify/functions/customer-orders";
+/* WISHLIST_URL is already declared in script.js (shared with the satchel
+   product-card handlers), which loads before this file in the same scope. */
 
 /* ── Small helpers ───────────────────────────────────────────── */
 
