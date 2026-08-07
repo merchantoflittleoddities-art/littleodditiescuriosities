@@ -1485,3 +1485,185 @@ textarea {
     opacity: 0.4;
   }
 }
+
+/* ==========================================================
+   ✦ Traveller's Keepings
+   Account pages: register/sign in/reset, and the Keepings hub
+   (Satchel, Map, Messages, Preferences). Scoped to .account-*
+   and .form-error/.form-success/.hidden so nothing else is affected.
+========================================================== */
+
+.hidden {
+  display: none !important;
+}
+
+.form-group--checkbox label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+}
+
+.form-group--checkbox input[type="checkbox"] {
+  width: auto;
+}
+
+.form-error {
+  color: #e08a8a;
+  font-size: 0.9rem;
+  margin: 4px 0 0;
+}
+
+.form-success {
+  color: #72a880;
+  font-size: 0.9rem;
+  margin: 4px 0 0;
+}
+
+.account-nav-link {
+  border: 1px solid rgba(197, 161, 90, 0.3) !important;
+}
+
+.account-hub-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.account-hub-header h2 {
+  margin: 0;
+  color: var(--accent);
+  font-size: clamp(1.5rem, 2.5vw, 2rem);
+}
+
+.account-layout {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 32px;
+  align-items: start;
+}
+
+.account-sidebar {
+  display: grid;
+  gap: 8px;
+  position: sticky;
+  top: 96px;
+}
+
+.account-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 14px 18px;
+  border-radius: 18px;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.account-nav-item:hover {
+  transform: translateY(-1px);
+  border-color: var(--border);
+}
+
+.account-nav-item.active {
+  background: var(--accent);
+  border-color: var(--accent-hover);
+  color: #111;
+}
+
+.account-nav-item .nav-icon {
+  font-size: 1.1rem;
+}
+
+.account-main {
+  min-width: 0;
+}
+
+.panel-header {
+  margin-bottom: 24px;
+}
+
+.panel-header h3 {
+  margin: 0;
+  color: var(--accent);
+}
+
+.panel-subtitle {
+  margin: 8px 0 0;
+  color: var(--muted);
+}
+
+.satchel-grid,
+.map-grid {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.messages-list {
+  display: grid;
+  gap: 18px;
+  margin-top: 8px;
+}
+
+.message-card {
+  display: grid;
+  gap: 10px;
+}
+
+.message-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.order-badge {
+  display: inline-flex;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(197, 161, 90, 0.16);
+  color: var(--accent);
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+}
+
+.message-date {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.message-items {
+  margin: 0;
+  color: var(--text);
+}
+
+.message-status {
+  margin: 0;
+  color: var(--muted);
+  font-style: italic;
+}
+
+@media (max-width: 900px) {
+  .account-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .account-sidebar {
+    position: static;
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  .account-nav-item {
+    width: auto;
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+}

@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Traveller's Keepings</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600&display=swap">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body data-page="account">
+
+  <header class="site-header">
+    <div class="inner-wrap">
+      <a class="brand" href="index.html">
+        <div class="site-logo" aria-hidden="true">
+          <img class="site-logo-image" src="" alt="">
+          <div class="site-logo-placeholder" aria-hidden="true">✦</div>
+        </div>
+        <div>
+          <p class="eyebrow site-brand-name"></p>
+          <h1>Traveller's Keepings</h1>
+        </div>
+      </a>
+      <button class="menu-toggle" aria-label="Open navigation">☰</button>
+      <nav class="nav-links">
+        <a href="index.html">Home</a>
+        <a href="shop.html">Shop</a>
+        <a href="collections.html">Collections</a>
+        <a href="tiers.html">Treasure Tiers</a>
+        <a href="about.html">Meet the Merchant</a>
+        <a href="reviews.html">Traveller Reviews</a>
+        <a href="merchants-guide.html">Merchant's Guide</a>
+        <a href="contact.html">Send Word to the Merchant</a>
+        <a href="account.html" class="account-nav-link">Traveller's Keepings</a>
+        <a href="cabinet.html">Curiosity Cabinet <span class="cart-count">0</span></a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="page-content">
+
+    <!-- Shown while checking/loading the session -->
+    <section class="section-intro" id="account-loading-state">
+      <p>🕯️ Gathering your Keepings...</p>
+    </section>
+
+    <!-- Shown if not signed in -->
+    <section class="section-intro hidden" id="account-signed-out-state">
+      <h2>✦ Traveller's Keepings ✦</h2>
+      <div class="card" style="max-width: 480px; margin: 0 auto; text-align:center;">
+        <p>You must be a Recognised Traveller to view your Keepings.</p>
+        <div style="display:flex; gap:1rem; justify-content:center; flex-wrap:wrap; margin-top:1rem;">
+          <a class="button button-primary" href="signin.html">Rediscover the Cabinet</a>
+          <a class="button button-secondary" href="register.html">Become a Recognised Traveller</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Main account hub -->
+    <section class="account-hub hidden" id="account-hub">
+
+      <div class="account-hub-header">
+        <h2>✦ Welcome back, <span id="account-traveller-name">Traveller</span> ✦</h2>
+        <button class="button button-secondary" id="account-logout-button" type="button">Continue Your Travels</button>
+      </div>
+
+      <div class="account-layout">
+
+        <nav class="account-sidebar" aria-label="Traveller's Keepings navigation">
+          <button class="account-nav-item active" data-account-tab="satchel" type="button">
+            <span class="nav-icon">👜</span>
+            <span>Traveller's Satchel</span>
+          </button>
+          <button class="account-nav-item" data-account-tab="map" type="button">
+            <span class="nav-icon">🗺️</span>
+            <span>Traveller's Map</span>
+          </button>
+          <button class="account-nav-item" data-account-tab="messages" type="button">
+            <span class="nav-icon">✉️</span>
+            <span>Merchant's Messages</span>
+          </button>
+          <button class="account-nav-item" data-account-tab="preferences" type="button">
+            <span class="nav-icon">🕯️</span>
+            <span>Traveller's Preferences</span>
+          </button>
+        </nav>
+
+        <div class="account-main">
+
+          <!-- Traveller's Satchel (Wishlist) -->
+          <section id="account-tab-satchel" class="account-tab-panel">
+            <header class="panel-header">
+              <h3>👜 Traveller's Satchel</h3>
+              <p class="panel-subtitle">Treasures you have set aside for another day.</p>
+            </header>
+            <div id="satchel-list" class="grid satchel-grid"></div>
+          </section>
+
+          <!-- Traveller's Map (Addresses) -->
+          <section id="account-tab-map" class="account-tab-panel hidden">
+            <header class="panel-header">
+              <h3>🗺️ Traveller's Map</h3>
+              <p class="panel-subtitle">The landmarks where your treasures may find you.</p>
+            </header>
+
+            <div id="map-list" class="grid map-grid"></div>
+
+            <button class="button button-secondary" id="map-add-button" type="button" style="margin-top:1.5rem;">
+              ➕ Add a Landmark
+            </button>
+
+            <div class="card hidden" id="map-form-card" style="margin-top:1.5rem; max-width:520px;">
+              <h4 id="map-form-title">Add a Landmark</h4>
+              <form id="map-form" autocomplete="off">
+                <input type="hidden" id="map-id">
+                <div class="form-group">
+                  <label for="map-label">Label</label>
+                  <input type="text" id="map-label" placeholder="e.g. Home, The Cottage">
+                </div>
+                <div class="form-group">
+                  <label for="map-line1">Address Line 1</label>
+                  <input type="text" id="map-line1" required>
+                </div>
+                <div class="form-group">
+                  <label for="map-line2">Address Line 2</label>
+                  <input type="text" id="map-line2">
+                </div>
+                <div class="form-group">
+                  <label for="map-city">City</label>
+                  <input type="text" id="map-city" required>
+                </div>
+                <div class="form-group">
+                  <label for="map-region">Region / County</label>
+                  <input type="text" id="map-region">
+                </div>
+                <div class="form-group">
+                  <label for="map-postcode">Postcode</label>
+                  <input type="text" id="map-postcode" required>
+                </div>
+                <div class="form-group">
+                  <label for="map-country">Country</label>
+                  <input type="text" id="map-country" required>
+                </div>
+                <div class="form-group form-group--checkbox">
+                  <label><input type="checkbox" id="map-default"> Set as default Landmark</label>
+                </div>
+                <p id="map-error" class="form-error hidden"></p>
+                <div style="display:flex; gap:0.75rem;">
+                  <button type="submit" class="button button-primary">Save Landmark</button>
+                  <button type="button" class="button button-secondary" id="map-cancel-button">Cancel</button>
+                </div>
+              </form>
+            </div>
+          </section>
+
+          <!-- Merchant's Messages (Orders) -->
+          <section id="account-tab-messages" class="account-tab-panel hidden">
+            <header class="panel-header">
+              <h3>✉️ Merchant's Messages</h3>
+              <p class="panel-subtitle">Word from the Merchant on every treasure you have claimed.</p>
+            </header>
+            <div id="messages-list" class="messages-list"></div>
+          </section>
+
+          <!-- Traveller's Preferences (Profile) -->
+          <section id="account-tab-preferences" class="account-tab-panel hidden">
+            <header class="panel-header">
+              <h3>🕯️ Traveller's Preferences</h3>
+              <p class="panel-subtitle">Keep your details with the Merchant up to date.</p>
+            </header>
+
+            <div class="card" style="max-width:520px;">
+              <form id="preferences-form" autocomplete="off">
+                <div class="form-group">
+                  <label for="preferences-name">Traveller Name</label>
+                  <input type="text" id="preferences-name" required>
+                </div>
+                <div class="form-group">
+                  <label for="preferences-email">Email Address</label>
+                  <input type="email" id="preferences-email" required>
+                </div>
+                <div class="form-group">
+                  <label for="preferences-password">New Traveller Password</label>
+                  <input type="password" id="preferences-password" placeholder="Leave blank to keep your current password">
+                </div>
+                <div class="form-group form-group--checkbox">
+                  <label>
+                    <input type="checkbox" id="preferences-notifications">
+                    Notify me of Merchant's Messages about my orders
+                  </label>
+                </div>
+                <p id="preferences-error" class="form-error hidden"></p>
+                <p id="preferences-success" class="form-success hidden"></p>
+                <button type="submit" class="button button-primary">Save Preferences</button>
+              </form>
+            </div>
+          </section>
+
+        </div>
+
+      </div>
+
+    </section>
+
+  </main>
+
+  <footer class="site-footer">
+    <div class="inner-wrap">
+      <p>Every treasure has a story ✦</p>
+      <p>Instagram: <a class="social-instagram-link" href="#" target="_blank" rel="noreferrer"></a></p>
+      <p class="site-copyright"></p>
+    </div>
+  </footer>
+
+  <script src="script.js" defer></script>
+  <script src="account.js" defer></script>
+
+</body>
+</html>
