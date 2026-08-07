@@ -770,6 +770,19 @@ function initInventoryUI() {
    Module: UI helpers
    ============================================================ */
 
+function showToast(text) {
+  let toast = document.querySelector(".toast-notice");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.className = "toast-notice";
+    document.body.appendChild(toast);
+  }
+  toast.textContent = text;
+  toast.classList.add("visible");
+  window.clearTimeout(window.toastTimeout);
+  window.toastTimeout = window.setTimeout(() => toast.classList.remove("visible"), 2500);
+}
+
 function setText(id, value) {
   const el = document.getElementById(id);
   if (el) el.textContent = value;
@@ -783,6 +796,633 @@ function escapeHtml(str) {
     .replace(/>/g,  "&gt;")
     .replace(/"/g,  "&quot;")
     .replace(/'/g,  "&#39;");
+}
+
+/* ============================================================
+   Module: Featured Treasure Management
+   ============================================================ */
+
+const GET_FEATURED_URL    = "/.netlify/functions/get-featured-treasure";
+const UPDATE_FEATURED_URL = "/.netlify/functions/update-featured-treasure";
+
+let featuredData = null;
+
+async function fetchFeaturedData() {
+  try {
+    const res = await fetch(GET_FEATURED_URL, { cache: "no-store" });
+    if (!res.ok) throw new Error();
+    featuredData = await res.json();
+  } catch {
+    const res = await fetch("./data/featured-treasure.json", { cache: "no-store" });
+    featuredData = await res.json();
+  }
+  if (!featuredData) featuredData = {};
+  if (!featuredData.settings) featuredData.settings = {};
+  if (!Array.isArray(featuredData.features)) featuredData.features = [];
+  return featuredData;
+}
+
+async function saveFeaturedData(payload) {
+  /* Enforce: only one published feature at any time */
+  if (Array.isArray(payload.features)) {
+    let publishedFound = false;
+    payload.features.forEach((f) => {
+      if (f.status === "published") {
+        if (!publishedFound) {
+          publishedFound = true;
+        } else {
+          f.status = "draft";
+        }
+      }
+    });
+  }
+
+  const token = getToken();
+  const res = await fetch(UPDATE_FEATURED_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (res.status === 401) { clearToken(); showLogin(); throw new Error("Your session has expired."); }
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to save Featured Treasure.");
+  }
+
+  const data = await res.json();
+  featuredData = data.data || payload;
+  return featuredData;
+}
+
+async function loadAndRenderFeatured() {
+  if (!allProducts.length) {
+    await fetchProductCatalogue().catch(() => {});
+  }
+  await fetchFeaturedData();
+
+  const titleInput   = document.getElementById("featured-title-input");
+  const introInput   = document.getElementById("featured-intro-input");
+  const closingInput = document.getElementById("featured-closing-input");
+  const stockToggle  = document.getElementById("featured-stock-toggle");
+
+  if (titleInput)   titleInput.value   = featuredData.title || "";
+  if (introInput)   introInput.value   = featuredData.intro || "";
+  if (closingInput) closingInput.value = featuredData.closingNote || "";
+  if (stockToggle)  stockToggle.checked = Boolean(featuredData.settings?.showWhenOutOfStock);
+
+  populateProductSelect();
+  renderFeaturedList();
+}
+
+function populateProductSelect() {
+  const select = document.getElementById("feat-product-select");
+  if (!select) return;
+  const currentVal = select.value;
+  select.innerHTML = `<option value="">Select a product from the collection...</option>` +
+    allProducts.map((p) => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)} (${escapeHtml(p.collection)})</option>`).join("");
+  if (currentVal) select.value = currentVal;
+}
+
+function renderFeaturedList() {
+  const container = document.getElementById("featured-list");
+  if (!container) return;
+
+  if (!featuredData || !featuredData.features || !featuredData.features.length) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-emblem">✨</div>
+        <h3>No Featured Treasures set.</h3>
+        <p>Click "Set New Featured Treasure" above to select a curiosity for the high shelf.</p>
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = featuredData.features.map((feature) => {
+    const product = allProducts.find((p) => p.id === feature.productId);
+    const prodName = product ? product.name : feature.productId;
+
+    let statusBadge = "";
+    if (feature.status === "published") {
+      statusBadge = `<span class="stock-badge stock-badge--in">🟢 Published</span>`;
+    } else if (feature.status === "scheduled") {
+      statusBadge = `<span class="stock-badge stock-badge--low">🟣 Scheduled</span>`;
+    } else {
+      statusBadge = `<span class="stock-badge stock-badge--off">🟡 Draft</span>`;
+    }
+
+    const pinnedBadge = feature.pinned
+      ? `<span class="stock-badge stock-badge--low" style="margin-left:0.5rem;">📌 Pinned</span>`
+      : "";
+
+    const seasonalText = feature.seasonal ? ` · Seasonal: ${escapeHtml(feature.seasonal)}` : "";
+    const eyebrowText  = feature.eyebrow ? escapeHtml(feature.eyebrow) : "Set aside by the Merchant";
+
+    const notesText = Array.isArray(feature.merchantNote)
+      ? feature.merchantNote.join("\n\n")
+      : (feature.merchantNote || "");
+
+    const snippet = notesText ? `<p style="font-size:0.85rem;color:var(--text-muted);margin-top:0.5rem;font-style:italic;">"${escapeHtml(notesText.slice(0, 140))}${notesText.length > 140 ? "..." : ""}"</p>` : "";
+
+    const publishAtText = feature.publishAt ? `Publish: ${new Date(feature.publishAt).toLocaleString("en-GB")}` : "";
+    const expiresAtText = feature.expiresAt ? `Expires: ${new Date(feature.expiresAt).toLocaleString("en-GB")}` : "";
+    const datesInfo = (publishAtText || expiresAtText)
+      ? `<div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.3rem;">${publishAtText} ${publishAtText && expiresAtText ? "· " : ""}${expiresAtText}</div>`
+      : "";
+
+    const publishBtn = feature.status === "published"
+      ? `<button class="btn-status" data-feat-action="draft" data-feat-id="${feature.id}">Save Draft</button>`
+      : `<button class="btn-status" data-feat-action="publish" data-feat-id="${feature.id}">Publish Immediately</button>`;
+
+    return `
+      <article class="order-card" data-feat-id="${feature.id}">
+        <div class="order-card-header">
+          <div class="order-card-title">
+            <span class="order-badge">✨ ${escapeHtml(prodName)}</span>
+            ${pinnedBadge}
+          </div>
+          <div>${statusBadge}</div>
+        </div>
+        <div class="order-card-body">
+          <div style="font-size:0.8rem;color:var(--text-gold);text-transform:uppercase;letter-spacing:0.05em;">
+            ${eyebrowText}${seasonalText}
+          </div>
+          ${snippet}
+          ${datesInfo}
+        </div>
+        <div class="order-card-actions">
+          <button class="btn-status" data-feat-action="edit" data-feat-id="${feature.id}">Edit</button>
+          ${publishBtn}
+          <button class="btn-ghost" data-feat-action="delete" data-feat-id="${feature.id}" style="color:#ff6b6b;margin-left:auto;">Delete</button>
+        </div>
+      </article>
+    `;
+  }).join("");
+}
+
+function openFeaturedModal(feature = null) {
+  populateProductSelect();
+  const modal = document.getElementById("modal-featured");
+  const title = document.getElementById("modal-featured-title");
+
+  if (!modal) return;
+
+  document.getElementById("feat-id").value = feature ? feature.id : "";
+  document.getElementById("feat-product-select").value = feature ? feature.productId : "";
+  document.getElementById("feat-eyebrow").value = feature?.eyebrow || "Set aside by the Merchant";
+  document.getElementById("feat-seasonal").value = feature?.seasonal || "";
+  document.getElementById("feat-cta").value = feature?.ctaLabel || "View This Treasure";
+  document.getElementById("feat-signoff").value = feature?.signoff || "— The Merchant";
+  document.getElementById("feat-alt").value = feature?.imageAlt || "";
+
+  const notes = Array.isArray(feature?.merchantNote)
+    ? feature.merchantNote.join("\n\n")
+    : (feature?.merchantNote || "");
+  document.getElementById("feat-note").value = notes;
+
+  document.getElementById("feat-status").value = feature?.status || "published";
+  document.getElementById("feat-publish-at").value = feature?.publishAt ? new Date(feature.publishAt).toISOString().slice(0, 16) : "";
+  document.getElementById("feat-expires-at").value = feature?.expiresAt ? new Date(feature.expiresAt).toISOString().slice(0, 16) : "";
+  document.getElementById("feat-pinned").checked = Boolean(feature?.pinned);
+
+  if (title) title.textContent = feature ? "✨ Edit Featured Treasure" : "✨ Set New Featured Treasure";
+  modal.classList.remove("hidden");
+}
+
+function closeFeaturedModal() {
+  document.getElementById("modal-featured")?.classList.add("hidden");
+}
+
+
+/* ============================================================
+   Module: Merchant's Journal Management
+   ============================================================ */
+
+const GET_DESK_URL    = "/.netlify/functions/get-desk-entries";
+const UPDATE_DESK_URL = "/.netlify/functions/update-desk-entries";
+
+let deskData = null;
+
+async function fetchDeskData() {
+  try {
+    const res = await fetch(GET_DESK_URL, { cache: "no-store" });
+    if (!res.ok) throw new Error();
+    deskData = await res.json();
+  } catch {
+    const res = await fetch("./data/desk-entries.json", { cache: "no-store" });
+    deskData = await res.json();
+  }
+  if (!deskData) deskData = {};
+  if (!deskData.settings) deskData.settings = {};
+  if (!Array.isArray(deskData.entries)) deskData.entries = [];
+  return deskData;
+}
+
+async function saveDeskData(payload) {
+  const token = getToken();
+  const res = await fetch(UPDATE_DESK_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (res.status === 401) { clearToken(); showLogin(); throw new Error("Your session has expired."); }
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to save Journal entries.");
+  }
+
+  const data = await res.json();
+  deskData = data.data || payload;
+  return deskData;
+}
+
+async function loadAndRenderJournal() {
+  await fetchDeskData();
+
+  const titleInput    = document.getElementById("journal-title-input");
+  const subtitleInput = document.getElementById("journal-subtitle-input");
+  const closingInput  = document.getElementById("journal-closing-input");
+  const limitInput    = document.getElementById("journal-limit-input");
+
+  if (titleInput)    titleInput.value    = deskData.title || "";
+  if (subtitleInput) subtitleInput.value = deskData.subtitle || "";
+  if (closingInput)  closingInput.value  = deskData.closingNote || "";
+  if (limitInput)    limitInput.value    = deskData.settings?.homepageLimit || 3;
+
+  renderJournalList();
+}
+
+function renderJournalList() {
+  const container = document.getElementById("journal-list");
+  if (!container) return;
+
+  const searchQuery  = (document.getElementById("journal-search-input")?.value || "").trim().toLowerCase();
+  const statusFilter = document.getElementById("journal-status-filter")?.value || "";
+
+  /* Display Merchant's Journal entries newest first by default */
+  const entries = [...(deskData.entries || [])].sort((a, b) => {
+    if (Boolean(a.pinned) !== Boolean(b.pinned)) return a.pinned ? -1 : 1;
+    const timeA = Date.parse(a.date || a.publishAt || 0) || 0;
+    const timeB = Date.parse(b.date || b.publishAt || 0) || 0;
+    return timeB - timeA;
+  });
+
+  const filtered = entries.filter((entry) => {
+    const matchStatus = !statusFilter || (entry.status || "published") === statusFilter;
+    const bodyStr = Array.isArray(entry.body) ? entry.body.join(" ") : String(entry.body || "");
+    const matchQuery = !searchQuery ||
+      (entry.title || "").toLowerCase().includes(searchQuery) ||
+      (entry.dateLabel || "").toLowerCase().includes(searchQuery) ||
+      bodyStr.toLowerCase().includes(searchQuery);
+    return matchStatus && matchQuery;
+  });
+
+  setText("journal-count", `${filtered.length} entry${filtered.length === 1 ? "" : "ies"} in the archive`);
+
+  if (!filtered.length) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-emblem">📖</div>
+        <h3>No entries found in the archive.</h3>
+        <p>Click "Write New Entry" above to add a letter or note to the desk.</p>
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = filtered.map((entry) => {
+    let statusBadge = "";
+    const st = entry.status || "published";
+    if (st === "published") {
+      statusBadge = `<span class="stock-badge stock-badge--in">🟢 Published</span>`;
+    } else if (st === "scheduled") {
+      statusBadge = `<span class="stock-badge stock-badge--low">🟣 Scheduled</span>`;
+    } else {
+      statusBadge = `<span class="stock-badge stock-badge--off">🟡 Draft</span>`;
+    }
+
+    const pinnedBadge = entry.pinned
+      ? `<span class="stock-badge stock-badge--low" style="margin-left:0.5rem;">📌 Pinned</span>`
+      : "";
+
+    const dateDisplay = entry.dateLabel || entry.date || (entry.publishAt ? new Date(entry.publishAt).toLocaleDateString("en-GB") : "Undated");
+    const bodyStr = Array.isArray(entry.body) ? entry.body.join("\n\n") : String(entry.body || "");
+    const snippet = bodyStr ? `<p style="font-size:0.85rem;color:var(--text-muted);margin-top:0.5rem;font-style:italic;">"${escapeHtml(bodyStr.slice(0, 150))}${bodyStr.length > 150 ? "..." : ""}"</p>` : "";
+
+    return `
+      <article class="order-card" data-journal-id="${entry.id}">
+        <div class="order-card-header">
+          <div class="order-card-title">
+            <span class="order-badge">${escapeHtml(entry.title)}</span>
+            ${pinnedBadge}
+          </div>
+          <div>${statusBadge}</div>
+        </div>
+        <div class="order-card-body">
+          <div style="font-size:0.8rem;color:var(--text-gold);">
+            🕯️ ${escapeHtml(dateDisplay)}
+          </div>
+          ${snippet}
+          ${entry.signoff ? `<div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.3rem;">${escapeHtml(entry.signoff)}</div>` : ""}
+        </div>
+        <div class="order-card-actions">
+          <button class="btn-status" data-journal-action="edit" data-journal-id="${entry.id}">Edit</button>
+          <button class="btn-ghost" data-journal-action="delete" data-journal-id="${entry.id}" style="color:#ff6b6b;margin-left:auto;">Delete</button>
+        </div>
+      </article>
+    `;
+  }).join("");
+}
+
+function openJournalModal(entry = null) {
+  const modal = document.getElementById("modal-journal");
+  const title = document.getElementById("modal-journal-title");
+
+  if (!modal) return;
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  document.getElementById("journal-id").value = entry ? entry.id : "";
+  document.getElementById("journal-title").value = entry?.title || "";
+  document.getElementById("journal-date").value = entry?.date || todayStr;
+  document.getElementById("journal-date-label").value = entry?.dateLabel || "";
+
+  const bodyStr = Array.isArray(entry?.body) ? entry.body.join("\n\n") : (entry?.body || "");
+  document.getElementById("journal-body").value = bodyStr;
+
+  document.getElementById("journal-signoff").value = entry?.signoff || "— The Merchant";
+  document.getElementById("journal-status").value = entry?.status || "published";
+  document.getElementById("journal-publish-at").value = entry?.publishAt ? new Date(entry.publishAt).toISOString().slice(0, 16) : "";
+  document.getElementById("journal-expires-at").value = entry?.expiresAt ? new Date(entry.expiresAt).toISOString().slice(0, 16) : "";
+  document.getElementById("journal-pinned").checked = Boolean(entry?.pinned);
+
+  if (title) title.textContent = entry ? "📖 Edit Journal Entry" : "📖 Write New Journal Entry";
+  modal.classList.remove("hidden");
+}
+
+function closeJournalModal() {
+  document.getElementById("modal-journal")?.classList.add("hidden");
+}
+
+function initCmsUI() {
+  /* Featured settings form */
+  document.getElementById("featured-settings-form")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!featuredData) await fetchFeaturedData();
+    featuredData.title = document.getElementById("featured-title-input")?.value || "✨ Featured Treasure";
+    featuredData.intro = document.getElementById("featured-intro-input")?.value || "";
+    featuredData.closingNote = document.getElementById("featured-closing-input")?.value || "";
+    if (!featuredData.settings) featuredData.settings = {};
+    featuredData.settings.showWhenOutOfStock = Boolean(document.getElementById("featured-stock-toggle")?.checked);
+
+    try {
+      await saveFeaturedData(featuredData);
+      showToast("Featured Treasure section settings saved.");
+    } catch (err) {
+      showToast(err.message);
+    }
+  });
+
+  /* Open featured editor modal */
+  document.getElementById("feat-add-btn")?.addEventListener("click", () => openFeaturedModal());
+  document.getElementById("modal-featured-close")?.addEventListener("click", closeFeaturedModal);
+  document.getElementById("feat-cancel-btn")?.addEventListener("click", closeFeaturedModal);
+
+  /* Featured editor form submission */
+  document.getElementById("featured-editor-form")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!featuredData) await fetchFeaturedData();
+
+    const id          = document.getElementById("feat-id").value;
+    const productId   = document.getElementById("feat-product-select").value;
+    const eyebrow     = document.getElementById("feat-eyebrow").value.trim() || "Set aside by the Merchant";
+    const seasonal    = document.getElementById("feat-seasonal").value.trim() || null;
+    const ctaLabel    = document.getElementById("feat-cta").value.trim() || "View This Treasure";
+    const signoff     = document.getElementById("feat-signoff").value.trim() || "— The Merchant";
+    const imageAlt    = document.getElementById("feat-alt").value.trim() || "";
+    const noteText    = document.getElementById("feat-note").value.trim();
+    const status      = document.getElementById("feat-status").value;
+    const publishAtVal = document.getElementById("feat-publish-at").value;
+    const expiresAtVal = document.getElementById("feat-expires-at").value;
+    const pinned      = document.getElementById("feat-pinned").checked;
+
+    if (!productId) {
+      showToast("Please select a product.");
+      return;
+    }
+
+    const merchantNote = noteText ? noteText.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean) : [];
+    const publishAt = publishAtVal ? new Date(publishAtVal).toISOString() : null;
+    const expiresAt = expiresAtVal ? new Date(expiresAtVal).toISOString() : null;
+
+    /* Enforce: if status is published, all other features become draft */
+    if (status === "published") {
+      featuredData.features.forEach((f) => f.status = "draft");
+    }
+
+    let existing = featuredData.features.find((f) => f.id === id);
+    if (existing) {
+      existing.productId = productId;
+      existing.eyebrow = eyebrow;
+      existing.seasonal = seasonal;
+      existing.ctaLabel = ctaLabel;
+      existing.signoff = signoff;
+      existing.imageAlt = imageAlt;
+      existing.merchantNote = merchantNote;
+      existing.status = status;
+      existing.publishAt = publishAt;
+      existing.expiresAt = expiresAt;
+      existing.pinned = pinned;
+    } else {
+      const newId = `feat-${Date.now()}`;
+      const newFeature = {
+        id: newId,
+        productId,
+        eyebrow,
+        seasonal,
+        ctaLabel,
+        signoff,
+        imageAlt,
+        merchantNote,
+        status,
+        publishAt,
+        expiresAt,
+        pinned,
+        displayOrder: featuredData.features.length + 1
+      };
+      featuredData.features.unshift(newFeature);
+    }
+
+    try {
+      await saveFeaturedData(featuredData);
+      renderFeaturedList();
+      closeFeaturedModal();
+      showToast("Featured Treasure saved.");
+    } catch (err) {
+      showToast(err.message);
+    }
+  });
+
+  /* Delegated actions on Featured Treasure list */
+  document.getElementById("featured-list")?.addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-feat-action]");
+    if (!btn) return;
+
+    const action = btn.dataset.featAction;
+    const id     = btn.dataset.featId;
+    const feature = featuredData?.features?.find((f) => f.id === id);
+    if (!feature) return;
+
+    if (action === "edit") {
+      openFeaturedModal(feature);
+    } else if (action === "publish") {
+      featuredData.features.forEach((f) => f.status = "draft");
+      feature.status = "published";
+      try {
+        await saveFeaturedData(featuredData);
+        renderFeaturedList();
+        showToast("Treasure published immediately.");
+      } catch (err) { showToast(err.message); }
+    } else if (action === "draft") {
+      feature.status = "draft";
+      try {
+        await saveFeaturedData(featuredData);
+        renderFeaturedList();
+        showToast("Treasure status set to Draft.");
+      } catch (err) { showToast(err.message); }
+    } else if (action === "delete") {
+      if (window.confirm("Are you sure you want to remove this Featured Treasure?")) {
+        featuredData.features = featuredData.features.filter((f) => f.id !== id);
+        try {
+          await saveFeaturedData(featuredData);
+          renderFeaturedList();
+          showToast("Featured Treasure removed.");
+        } catch (err) { showToast(err.message); }
+      }
+    }
+  });
+
+  /* Journal settings form */
+  document.getElementById("journal-settings-form")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!deskData) await fetchDeskData();
+    deskData.title = document.getElementById("journal-title-input")?.value || "🕯️ From the Merchant's Desk";
+    deskData.subtitle = document.getElementById("journal-subtitle-input")?.value || "";
+    deskData.closingNote = document.getElementById("journal-closing-input")?.value || "";
+    if (!deskData.settings) deskData.settings = {};
+    deskData.settings.homepageLimit = parseInt(document.getElementById("journal-limit-input")?.value || "3", 10);
+
+    try {
+      await saveDeskData(deskData);
+      showToast("Journal header settings saved.");
+    } catch (err) {
+      showToast(err.message);
+    }
+  });
+
+  /* Search & Filter Journal */
+  document.getElementById("journal-search-input")?.addEventListener("input", renderJournalList);
+  document.getElementById("journal-status-filter")?.addEventListener("change", renderJournalList);
+
+  /* Open journal editor modal */
+  document.getElementById("journal-add-btn")?.addEventListener("click", () => openJournalModal());
+  document.getElementById("modal-journal-close")?.addEventListener("click", closeJournalModal);
+  document.getElementById("journal-cancel-btn")?.addEventListener("click", closeJournalModal);
+
+  /* Journal editor form submission */
+  document.getElementById("journal-editor-form")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!deskData) await fetchDeskData();
+
+    const id           = document.getElementById("journal-id").value;
+    const title        = document.getElementById("journal-title").value.trim();
+    const date         = document.getElementById("journal-date").value;
+    const dateLabel    = document.getElementById("journal-date-label").value.trim() || null;
+    const bodyText     = document.getElementById("journal-body").value.trim();
+    const signoff      = document.getElementById("journal-signoff").value.trim() || "— The Merchant";
+    const status       = document.getElementById("journal-status").value;
+    const publishAtVal = document.getElementById("journal-publish-at").value;
+    const expiresAtVal = document.getElementById("journal-expires-at").value;
+    const pinned       = document.getElementById("journal-pinned").checked;
+
+    if (!title || !date || !bodyText) {
+      showToast("Please complete the required fields.");
+      return;
+    }
+
+    const body = bodyText.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+    const publishAt = publishAtVal ? new Date(publishAtVal).toISOString() : null;
+    const expiresAt = expiresAtVal ? new Date(expiresAtVal).toISOString() : null;
+
+    let existing = deskData.entries.find((entry) => entry.id === id);
+    if (existing) {
+      existing.title = title;
+      existing.date = date;
+      existing.dateLabel = dateLabel;
+      existing.body = body;
+      existing.signoff = signoff;
+      existing.status = status;
+      existing.publishAt = publishAt;
+      existing.expiresAt = expiresAt;
+      existing.pinned = pinned;
+    } else {
+      const newId = `entry-${Date.now()}`;
+      const newEntry = {
+        id: newId,
+        title,
+        date,
+        dateLabel,
+        body,
+        signoff,
+        status,
+        publishAt,
+        expiresAt,
+        pinned,
+        displayOrder: deskData.entries.length + 1
+      };
+      deskData.entries.unshift(newEntry);
+    }
+
+    try {
+      await saveDeskData(deskData);
+      renderJournalList();
+      closeJournalModal();
+      showToast("Journal entry saved.");
+    } catch (err) {
+      showToast(err.message);
+    }
+  });
+
+  /* Delegated actions on Journal list */
+  document.getElementById("journal-list")?.addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-journal-action]");
+    if (!btn) return;
+
+    const action = btn.dataset.journalAction;
+    const id     = btn.dataset.journalId;
+    const entry  = deskData?.entries?.find((item) => item.id === id);
+    if (!entry) return;
+
+    if (action === "edit") {
+      openJournalModal(entry);
+    } else if (action === "delete") {
+      /* Deleting a journal entry MUST require confirmation before permanent removal */
+      if (window.confirm("Are you sure you want to permanently delete this entry from the Merchant's Journal?")) {
+        deskData.entries = deskData.entries.filter((item) => item.id !== id);
+        try {
+          await saveDeskData(deskData);
+          renderJournalList();
+          showToast("Journal entry permanently deleted.");
+        } catch (err) { showToast(err.message); }
+      }
+    }
+  });
 }
 
 function showLogin() {
@@ -909,15 +1549,26 @@ function initDashboardUI() {
     button.addEventListener("click", () => {
       const tab = button.dataset.tab;
       activateTab(tab);
-      /* Load inventory data when the Supplies tab is first opened */
+      /* Load inventory data when the Supplies tab is opened */
       if (tab === "supplies" && !allProducts.length) {
         loadAndRenderInventory();
+      }
+      /* Load Featured Treasure data when Featured tab is opened */
+      if (tab === "featured") {
+        loadAndRenderFeatured();
+      }
+      /* Load Journal data when Merchant's Journal tab is opened */
+      if (tab === "journal") {
+        loadAndRenderJournal();
       }
     });
   });
 
   /* Inventory module */
   initInventoryUI();
+
+  /* CMS module (Featured Treasure & Merchant's Journal) */
+  initCmsUI();
 
   /* Search & filter (ledger tab) */
   const searchInput    = document.getElementById("search-input");

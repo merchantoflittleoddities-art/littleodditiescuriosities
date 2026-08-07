@@ -73,6 +73,14 @@
           <span class="nav-icon">🏺</span>
           <span>Supplies</span>
         </button>
+        <button class="nav-item" data-tab="featured" type="button">
+          <span class="nav-icon">✨</span>
+          <span>Featured Treasure</span>
+        </button>
+        <button class="nav-item" data-tab="journal" type="button">
+          <span class="nav-icon">📖</span>
+          <span>Merchant's Journal</span>
+        </button>
         <button class="nav-item" data-tab="stats" type="button">
           <span class="nav-icon">📊</span>
           <span>Tallies</span>
@@ -298,6 +306,118 @@
 
 
       <!-- ╔══════════════════════════════════════════════════
+           Tab: Featured Treasure
+           ══════════════════════════════════════════════════ -->
+      <section id="tab-featured" class="tab-panel hidden">
+
+        <header class="panel-header">
+          <h1>✨ Featured Treasure</h1>
+          <p class="panel-subtitle">Manage the curiosity set aside upon the high shelf for travellers to see.</p>
+        </header>
+
+        <!-- Section settings card -->
+        <div class="cms-settings-card">
+          <h3>✦ Storefront Header & Settings ✦</h3>
+          <form id="featured-settings-form" class="cms-form-grid">
+            <div class="form-group">
+              <label for="featured-title-input">Section Title</label>
+              <input type="text" id="featured-title-input" placeholder="✨ Featured Treasure">
+            </div>
+            <div class="form-group full-width">
+              <label for="featured-intro-input">Introduction Note</label>
+              <textarea id="featured-intro-input" rows="2" placeholder="Every so often the Merchant lifts one curiosity down..."></textarea>
+            </div>
+            <div class="form-group">
+              <label for="featured-closing-input">Closing Note</label>
+              <input type="text" id="featured-closing-input" placeholder="The Merchant chooses again whenever something upon the shelves catches the light.">
+            </div>
+            <div class="form-group checkbox-group">
+              <label class="checkbox-label">
+                <input type="checkbox" id="featured-stock-toggle">
+                Show featured treasure even if out of stock
+              </label>
+            </div>
+            <div class="form-group full-width">
+              <button type="submit" class="btn-secondary" style="max-width:220px;">Save Header Settings</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Featured Items Header & Action Bar -->
+        <div class="cms-toolbar">
+          <h2>✦ Featured Selections ✦</h2>
+          <button id="feat-add-btn" class="btn-primary" type="button" style="max-width:240px;">
+            ✦ Set New Featured Treasure
+          </button>
+        </div>
+        <p class="cms-hint">Note: Only one Featured Treasure may be published on the storefront at any time.</p>
+
+        <div id="featured-list" class="orders-grid" style="margin-top:1rem;"></div>
+
+      </section>
+
+
+      <!-- ╔══════════════════════════════════════════════════
+           Tab: Merchant's Journal
+           ══════════════════════════════════════════════════ -->
+      <section id="tab-journal" class="tab-panel hidden">
+
+        <header class="panel-header">
+          <h1>📖 Merchant's Journal</h1>
+          <p class="panel-subtitle">Manage notes, letters and thoughts published as "From the Merchant's Desk".</p>
+        </header>
+
+        <!-- Section settings card -->
+        <div class="cms-settings-card">
+          <h3>✦ Storefront Header Settings ✦</h3>
+          <form id="journal-settings-form" class="cms-form-grid">
+            <div class="form-group">
+              <label for="journal-title-input">Public Section Title</label>
+              <input type="text" id="journal-title-input" placeholder="🕯️ From the Merchant's Desk">
+            </div>
+            <div class="form-group">
+              <label for="journal-subtitle-input">Subtitle</label>
+              <input type="text" id="journal-subtitle-input" placeholder="Notes, letters and half-finished thoughts left upon the desk...">
+            </div>
+            <div class="form-group">
+              <label for="journal-closing-input">Closing Note</label>
+              <input type="text" id="journal-closing-input" placeholder="The Merchant writes when the evenings allow.">
+            </div>
+            <div class="form-group">
+              <label for="journal-limit-input">Homepage Entry Limit</label>
+              <input type="number" id="journal-limit-input" min="1" max="10" placeholder="3">
+            </div>
+            <div class="form-group full-width">
+              <button type="submit" class="btn-secondary" style="max-width:220px;">Save Header Settings</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Journal Archive Toolbar -->
+        <div class="ledger-toolbar">
+          <div class="ledger-search">
+            <input type="text" id="journal-search-input" placeholder="Search journal entries..." autocomplete="off">
+          </div>
+          <div class="ledger-filters">
+            <select id="journal-status-filter" aria-label="Filter by publication status">
+              <option value="">All Statuses</option>
+              <option value="published">Published</option>
+              <option value="draft">Draft</option>
+              <option value="scheduled">Scheduled</option>
+            </select>
+          </div>
+          <button id="journal-add-btn" class="btn-primary" type="button" style="max-width:240px;margin-left:auto;">
+            ✦ Write New Entry
+          </button>
+        </div>
+
+        <p id="journal-count" class="orders-count"></p>
+        <div id="journal-list" class="orders-grid"></div>
+
+      </section>
+
+
+      <!-- ╔══════════════════════════════════════════════════
            Tab: Tallies (statistics)
            ══════════════════════════════════════════════════ -->
       <section id="tab-stats" class="tab-panel hidden">
@@ -379,6 +499,161 @@
 
     </main>
   </div><!-- /dashboard -->
+
+  <!-- Modal: Featured Treasure Editor -->
+  <div id="modal-featured" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 id="modal-featured-title">✨ Edit Featured Treasure</h2>
+        <button type="button" class="modal-close" id="modal-featured-close">&times;</button>
+      </div>
+      <form id="featured-editor-form" class="modal-body">
+        <input type="hidden" id="feat-id">
+
+        <div class="form-group">
+          <label for="feat-product-select">Select Product *</label>
+          <select id="feat-product-select" required>
+            <option value="">Select a product from the collection...</option>
+          </select>
+        </div>
+
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label for="feat-eyebrow">Eyebrow Tag</label>
+            <input type="text" id="feat-eyebrow" placeholder="e.g. Set aside by the Merchant">
+          </div>
+          <div class="form-group">
+            <label for="feat-seasonal">Seasonal Tag</label>
+            <input type="text" id="feat-seasonal" placeholder="e.g. Autumn, Winter">
+          </div>
+        </div>
+
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label for="feat-cta">Button Label</label>
+            <input type="text" id="feat-cta" placeholder="View This Treasure">
+          </div>
+          <div class="form-group">
+            <label for="feat-signoff">Merchant Sign-off</label>
+            <input type="text" id="feat-signoff" placeholder="— The Merchant">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="feat-alt">Image Alt Text</label>
+          <input type="text" id="feat-alt" placeholder="Description of the treasure photograph">
+        </div>
+
+        <div class="form-group">
+          <label for="feat-note">Merchant's Recommendation / Note</label>
+          <textarea id="feat-note" rows="4" placeholder="Write why this curiosity was set aside... (separate paragraphs with blank lines)"></textarea>
+        </div>
+
+        <div class="form-grid-3">
+          <div class="form-group">
+            <label for="feat-status">Publication Status *</label>
+            <select id="feat-status" required>
+              <option value="published">Published Immediately</option>
+              <option value="draft">Save Draft</option>
+              <option value="scheduled">Schedule Publication</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="feat-publish-at">Publish Date / Time</label>
+            <input type="datetime-local" id="feat-publish-at">
+          </div>
+          <div class="form-group">
+            <label for="feat-expires-at">Expiry Date / Time</label>
+            <input type="datetime-local" id="feat-expires-at">
+          </div>
+        </div>
+
+        <div class="form-group checkbox-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="feat-pinned">
+            Pin seasonal treasure (takes priority in display)
+          </label>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn-secondary" id="feat-cancel-btn">Cancel</button>
+          <button type="submit" class="btn-primary" style="max-width:200px;">Save Treasure</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+
+  <!-- Modal: Merchant's Journal Editor -->
+  <div id="modal-journal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 id="modal-journal-title">📖 Edit Journal Entry</h2>
+        <button type="button" class="modal-close" id="modal-journal-close">&times;</button>
+      </div>
+      <form id="journal-editor-form" class="modal-body">
+        <input type="hidden" id="journal-id">
+
+        <div class="form-group">
+          <label for="journal-title">Entry Title *</label>
+          <input type="text" id="journal-title" required placeholder="e.g. The Traveller with the Emerald Beads">
+        </div>
+
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label for="journal-date">Publication Date *</label>
+            <input type="date" id="journal-date" required>
+          </div>
+          <div class="form-group">
+            <label for="journal-date-label">Poetic Date Label</label>
+            <input type="text" id="journal-date-label" placeholder="e.g. Early August, before the shutters were opened">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="journal-body">Journal Text / Body *</label>
+          <textarea id="journal-body" rows="6" required placeholder="Write the entry text... (separate paragraphs with blank lines)"></textarea>
+        </div>
+
+        <div class="form-group">
+          <label for="journal-signoff">Merchant Sign-off</label>
+          <input type="text" id="journal-signoff" placeholder="— The Merchant">
+        </div>
+
+        <div class="form-grid-3">
+          <div class="form-group">
+            <label for="journal-status">Status *</label>
+            <select id="journal-status" required>
+              <option value="published">Published</option>
+              <option value="draft">Draft</option>
+              <option value="scheduled">Scheduled</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="journal-publish-at">Scheduled Publish Date / Time</label>
+            <input type="datetime-local" id="journal-publish-at">
+          </div>
+          <div class="form-group">
+            <label for="journal-expires-at">Expiry Date / Time</label>
+            <input type="datetime-local" id="journal-expires-at">
+          </div>
+        </div>
+
+        <div class="form-group checkbox-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="journal-pinned">
+            Pin entry to top of the pile
+          </label>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn-secondary" id="journal-cancel-btn">Cancel</button>
+          <button type="submit" class="btn-primary" style="max-width:200px;">Save Journal Entry</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
 
   <!--
     merchant-dashboard.js is entirely self-contained.

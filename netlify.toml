@@ -9,3 +9,16 @@
 
   # Netlify Functions live here
   functions = "netlify/functions"
+
+[[redirects]]
+  from   = "/data/featured-treasure.json"
+  to     = "/.netlify/functions/get-featured-treasure"
+  status = 200
+  force  = true
+
+[[redirects]]
+  from   = "/data/desk-entries.json"
+  to     = "/.netlify/functions/get-desk-entries"
+  status = 200
+  force  = true
+
