@@ -803,7 +803,6 @@ body {
 }
 
 .stock-input:focus { border-color: var(--gold); }
-
 .btn-stock-adj {
   background: var(--bg-card);
   border: 1px solid var(--gold-border);
@@ -818,6 +817,81 @@ body {
   cursor: pointer;
   padding: 0;
   transition: background var(--transition);
+}
+
+/* ── Availability & Message Controls ─────────────────────── */
+.avail-btn-group {
+  display: flex;
+  gap: 0.35rem;
+  margin-bottom: 0.4rem;
+}
+
+.btn-toggle-avail {
+  background: var(--bg-input);
+  border: 1px solid var(--gold-border);
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  padding: 0.35rem 0.65rem;
+  font-size: 0.78rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.btn-toggle-avail.active[data-avail-toggle="true"] {
+  background: rgba(78,207,110,0.18);
+  color: #4ecf6e;
+  border-color: #4ecf6e;
+  font-weight: bold;
+}
+
+.btn-toggle-avail.active[data-avail-toggle="false"] {
+  background: rgba(255,107,107,0.18);
+  color: #ff6b6b;
+  border-color: #ff6b6b;
+  font-weight: bold;
+}
+
+.msg-category-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.msg-category {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.msg-label {
+  font-size: 0.7rem;
+  color: var(--gold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.message-select {
+  background: var(--bg-input);
+  border: 1px solid var(--gold-border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  padding: 0.35rem 0.5rem;
+  font-size: 0.8rem;
+  font-family: inherit;
+  max-width: 240px;
+  outline: none;
+}
+
+.message-select:focus {
+  border-color: var(--gold);
+}
+
+.btn-save-action {
+  font-size: 0.78rem;
+  padding: 0.35rem 0.75rem;
+  width: 100%;
+}
   flex-shrink: 0;
 }
 

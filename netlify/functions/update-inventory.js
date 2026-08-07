@@ -52,11 +52,12 @@ function verifyToken(token) {
 function defaultEntry(productId) {
   return {
     productId,
-    stock:             null,   /* null = unmanaged / unlimited */
-    lowStockThreshold: 3,
-    available:         true,
-    storefrontMessage: "shelves",
-    lastUpdated:       Date.now()
+    stock:                        null,   /* null = unmanaged / unlimited */
+    lowStockThreshold:            3,
+    available:                    true,
+    availableStorefrontMessage:   "shelves",
+    unavailableStorefrontMessage: "roaming",
+    lastUpdated:                  Date.now()
   };
 }
 
@@ -143,8 +144,20 @@ exports.handler = async function (event) {
           break;
 
         case "setMessage":
-          entry.storefrontMessage = String(value || "shelves");
+          if (typeof value === "object" && value !== null) {
+            if (value.availableStorefrontMessage) {
+              entry.availableStorefrontMessage = String(value.availableStorefrontMessage);
+            }
+            if (value.unavailableStorefrontMessage) {
+              entry.unavailableStorefrontMessage = String(value.unavailableStorefrontMessage);
+            }
+          } else {
+            entry.availableStorefrontMessage = String(value || "shelves");
+          }
+          delete entry.storefrontMessage;
           delete entry.outOfStockMessage;
+          delete entry.availableMessage;
+          delete entry.unavailableMessage;
           break;
 
         default:
