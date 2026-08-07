@@ -557,17 +557,59 @@ function isProductLowStock(productId) {
   return inv.stock > 0 && inv.stock <= (inv.lowStockThreshold || 3);
 }
 
-/** Returns the themed out-of-stock message for a product */
-const OUT_OF_STOCK_MESSAGES = {
-  roaming:   "🕯️ The Merchant is roaming the land in search of this treasure.",
-  returning: "🌙 This treasure will return to the shelves before long.",
-  bespoke:   "✦ This treasure is available to order — Send Word to the Merchant."
+/** Storefront Message registry and resolvers */
+const STOREFRONT_MESSAGES = {
+  // Unavailable messages
+  roaming: {
+    type: "unavailable",
+    getText: (stock) => "🕯️ The Merchant is roaming the land in search of this treasure."
+  },
+  returning: {
+    type: "unavailable",
+    getText: (stock) => "🌙 This treasure will return to the shelves before long."
+  },
+  bespoke: {
+    type: "unavailable",
+    getText: (stock) => "✦ This treasure is available to order — Send Word to the Merchant."
+  },
+  // Available messages
+  workshop: {
+    type: "available",
+    getText: (stock) => "⚒️ The Merchant has this in the workshop."
+  },
+  shelves: {
+    type: "available",
+    getText: (stock) => "📦 The Merchant has this upon the shelves."
+  },
+  remaining: {
+    type: "available",
+    getText: (stock) => (stock !== null && stock !== undefined)
+      ? `⚠️ Only ${stock} remain upon the shelves.`
+      : "⚠️ Only a few remain upon the shelves."
+  },
+  request: {
+    type: "available",
+    getText: (stock) => "📜 The Merchant can make this upon a traveller's request."
+  }
 };
 
-function getOutOfStockMessage(productId) {
+/** Returns the resolved storefront message for a product */
+function getStorefrontMessage(productId) {
   const inv = getInventoryItem(productId);
-  const key = inv?.outOfStockMessage || "roaming";
-  return OUT_OF_STOCK_MESSAGES[key] || OUT_OF_STOCK_MESSAGES.roaming;
+  const available = isProductAvailable(productId);
+  const key = inv?.storefrontMessage || inv?.outOfStockMessage;
+  const msgDef = STOREFRONT_MESSAGES[key];
+
+  if (msgDef && ((available && msgDef.type === "available") || (!available && msgDef.type === "unavailable"))) {
+    return msgDef.getText(inv?.stock);
+  }
+
+  // Fallback based on availability state
+  if (available) {
+    return STOREFRONT_MESSAGES.shelves.getText(inv?.stock);
+  } else {
+    return STOREFRONT_MESSAGES.roaming.getText(inv?.stock);
+  }
 }
 
 
@@ -710,18 +752,14 @@ function buildProductCard(product) {
   const description  = product.description || "Bracelet details will be added soon.";
   const displayPrice = formatPrice(getProductPrice(product));
 
-  const available  = isProductAvailable(product.id);
-  const lowStock   = available && isProductLowStock(product.id);
+  const available = isProductAvailable(product.id);
+  const message   = getStorefrontMessage(product.id);
 
   const addButton = available
     ? `<button class="button button-secondary" type="button" data-add-to-cart="${product.id}">Add to Cabinet</button>`
-    : `<button class="button button-secondary" type="button" disabled style="opacity:0.55;cursor:not-allowed;">Out of Stock</button>`;
+    : `<button class="button button-secondary" type="button" disabled style="opacity:0.55;cursor:not-allowed;">Currently Unavailable</button>`;
 
-  const stockNotice = !available
-    ? `<p class="stock-notice stock-notice--out">${getOutOfStockMessage(product.id)}</p>`
-    : lowStock
-    ? `<p class="stock-notice stock-notice--low">⚠️ Only a few treasures remain.</p>`
-    : "";
+  const stockNotice = `<p class="stock-notice ${available ? "stock-notice--available" : "stock-notice--out"}">${escapeHtml(message)}</p>`;
 
   return `
     <article class="card product-card">
@@ -1128,12 +1166,8 @@ function buildFeaturedTreasure(feature, product) {
   const signoff = String(feature.signoff || "").trim();
 
   const available = isProductAvailable(product.id);
-  const lowStock  = available && isProductLowStock(product.id);
-  const stockNotice = !available
-    ? `<p class="stock-notice stock-notice--out">${escapeHtml(getOutOfStockMessage(product.id))}</p>`
-    : lowStock
-    ? `<p class="stock-notice stock-notice--low">⚠️ Only a few treasures remain.</p>`
-    : "";
+  const message   = getStorefrontMessage(product.id);
+  const stockNotice = `<p class="stock-notice ${available ? "stock-notice--available" : "stock-notice--out"}">${escapeHtml(message)}</p>`;
 
   return `
     <article class="featured-treasure">
@@ -1568,17 +1602,13 @@ function renderProductPage(products) {
   const displayPrice  = formatPrice(getProductPrice(product));
   const packagingText = tierMeta?.packaging || product.packaging || "Standard Handmade Packaging";
   const available     = isProductAvailable(product.id);
-  const lowStock      = available && isProductLowStock(product.id);
+  const message       = getStorefrontMessage(product.id);
 
-  const stockNotice = !available
-    ? `<p class="stock-notice stock-notice--out">${getOutOfStockMessage(product.id)}</p>`
-    : lowStock
-    ? `<p class="stock-notice stock-notice--low">⚠️ Only a few treasures remain.</p>`
-    : "";
+  const stockNotice = `<p class="stock-notice ${available ? "stock-notice--available" : "stock-notice--out"}">${escapeHtml(message)}</p>`;
 
   const addCabinetButton = available
     ? `<button class="button button-primary" type="button" id="add-to-cabinet">Add to Curiosity Cabinet</button>`
-    : `<button class="button button-primary" type="button" disabled style="opacity:0.55;cursor:not-allowed;">Out of Stock</button>`;
+    : `<button class="button button-primary" type="button" disabled style="opacity:0.55;cursor:not-allowed;">Currently Unavailable</button>`;
 
   detailArea.innerHTML = `
     <article class="card product-detail-card">

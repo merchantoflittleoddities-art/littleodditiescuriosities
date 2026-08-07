@@ -55,7 +55,7 @@ function defaultEntry(productId) {
     stock:             null,   /* null = unmanaged / unlimited */
     lowStockThreshold: 3,
     available:         true,
-    outOfStockMessage: "roaming",
+    storefrontMessage: "shelves",
     lastUpdated:       Date.now()
   };
 }
@@ -143,7 +143,8 @@ exports.handler = async function (event) {
           break;
 
         case "setMessage":
-          entry.outOfStockMessage = String(value || "roaming");
+          entry.storefrontMessage = String(value || "shelves");
+          delete entry.outOfStockMessage;
           break;
 
         default:
