@@ -622,10 +622,21 @@ function renderInventoryTable(products, inventory, query = "", statusFilter = ""
     `;
   }).join("");
 
-  /* Explicitly set the value of every message select so each product
-     displays its own independently-stored Out of Stock Message. */
-  tbody.querySelectorAll("select[data-action='setMessage']").forEach((sel) => {
-    sel.value = productMsgKeys[sel.dataset.productId] || "roaming";
+  /* Re-bind every control in each row to that row's product id.
+     This prevents stale data-product-id values from previous renders
+     from causing grouped updates across multiple products. */
+  tbody.querySelectorAll("tr[data-product-id]").forEach((row) => {
+    const rowProductId = row.getAttribute("data-product-id") || "";
+    row.querySelectorAll("[data-action]").forEach((el) => {
+      el.dataset.productId = rowProductId;
+    });
+
+    /* Explicitly set each row's message selector from that row's id so
+       every product shows only its own Out of Stock Message. */
+    const messageSelect = row.querySelector("select[data-action='setMessage']");
+    if (messageSelect) {
+      messageSelect.value = productMsgKeys[rowProductId] || "roaming";
+    }
   });
 
   renderInventoryStats(products, inventory);
