@@ -251,6 +251,7 @@ async function initAccountHub() {
     loadingState.classList.add("hidden");
     hub.classList.remove("hidden");
     document.getElementById("account-traveller-name").textContent = profile.customer.name;
+    document.getElementById("account-merchant-card")?.classList.toggle("hidden", profile.customer.role !== "merchant");
 
     document.getElementById("account-logout-button")?.addEventListener("click", () => {
       clearCustomerSession();

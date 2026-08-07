@@ -5,10 +5,13 @@
    Traveller's Preferences — view/update name, email, password,
    and notification preferences.
 
-   GET  → { customer: { id, name, email, notificationPrefs } }
+   GET  → { customer: { id, name, email, role, notificationPrefs } }
    POST body: { name?, email?, password?, notificationPrefs? }
-        → { customer: { id, name, email, notificationPrefs } }
+        → { customer: { id, name, email, role, notificationPrefs } }
    Requires: Authorization: Bearer <token>
+
+   `role` is read-only here — it is never accepted from the request
+   body. Merchant accounts are only created via promote-merchant.js.
    ============================================================= */
 
 const { connectLambda } = require("@netlify/blobs");
@@ -25,6 +28,7 @@ function publicShape(customer) {
     id: customer.id,
     name: customer.name,
     email: customer.email,
+    role: customer.role || "traveller",
     notificationPrefs: customer.notificationPrefs || { orderUpdates: true }
   };
 }
