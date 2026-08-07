@@ -5,7 +5,9 @@
    Completely separate from script.js — no shared state.
    Modules:
      AUTH        — login, token storage, expiry, logout
-     FULFILMENT  — localStorage-backed order status tracking
+     FULFILMENT  — Blobs-backed order status tracking (via
+                   get-order-status.js / update-order-status.js),
+                   cached in memory for synchronous rendering
      DATA        — fetch orders from Netlify Function
      FORMAT      — price and date helpers
      RENDER      — order cards, stats text
@@ -14,8 +16,8 @@
      UI          — tabs, loading/error states, login/dashboard toggle
      INIT        — wires everything together on DOMContentLoaded
 
-   Fulfilment statuses are stored in localStorage.
-   They persist across browser sessions on the same device.
+   Fulfilment statuses live in the shared "order-status" Blobs store
+   so that customer-facing Merchant's Messages can read them too.
    ============================================================= */
 
 "use strict";
@@ -24,10 +26,11 @@
    Constants
    ============================================================ */
 
-const AUTH_TOKEN_KEY   = "lo_merchant_token";
-const FULFILMENT_KEY   = "lo_fulfilment_statuses";
-const LOGIN_URL        = "/.netlify/functions/dashboard-login";
-const ORDERS_URL       = "/.netlify/functions/get-orders";
+const AUTH_TOKEN_KEY      = "lo_merchant_token";
+const LOGIN_URL           = "/.netlify/functions/dashboard-login";
+const ORDERS_URL          = "/.netlify/functions/get-orders";
+const GET_ORDER_STATUS_URL    = "/.netlify/functions/get-order-status";
+const UPDATE_ORDER_STATUS_URL = "/.netlify/functions/update-order-status";
 
 /** Configuration for each fulfilment status */
 const STATUS_CONFIG = {
@@ -93,25 +96,72 @@ async function login(password) {
 }
 
 /* ============================================================
-   Module: Fulfilment Status (localStorage)
+   Module: Fulfilment Status (Netlify Blobs, in-memory cache)
    ============================================================ */
 
-function getFulfilmentStatuses() {
+/** In-memory cache of { [orderId]: status } — populated by fetchFulfilmentStatuses() */
+let fulfilmentCache = {};
+
+/** Fetch all order statuses from Blobs and populate the in-memory cache */
+async function fetchFulfilmentStatuses() {
+  const token = getToken();
   try {
-    return JSON.parse(localStorage.getItem(FULFILMENT_KEY)) || {};
-  } catch {
-    return {};
+    const response = await fetch(GET_ORDER_STATUS_URL, {
+      headers: { "Authorization": `Bearer ${token}` }
+    });
+
+    if (response.status === 401) {
+      clearToken();
+      showLogin();
+      return;
+    }
+    if (!response.ok) return;
+
+    const { statuses } = await response.json();
+    fulfilmentCache = {};
+    Object.entries(statuses || {}).forEach(([orderId, record]) => {
+      fulfilmentCache[orderId] = record.status;
+    });
+  } catch (error) {
+    console.error("Order status load error:", error.message);
   }
 }
 
-function getFulfilmentStatus(orderId) {
-  return getFulfilmentStatuses()[orderId] || "new";
+function getFulfilmentStatuses() {
+  return fulfilmentCache;
 }
 
+function getFulfilmentStatus(orderId) {
+  return fulfilmentCache[orderId] || "new";
+}
+
+/** Update the in-memory cache immediately, then persist to Blobs in the background */
 function setFulfilmentStatus(orderId, status) {
-  const statuses  = getFulfilmentStatuses();
-  statuses[orderId] = status;
-  localStorage.setItem(FULFILMENT_KEY, JSON.stringify(statuses));
+  fulfilmentCache[orderId] = status;
+
+  const token = getToken();
+  fetch(UPDATE_ORDER_STATUS_URL, {
+    method:  "POST",
+    headers: {
+      "Content-Type":  "application/json",
+      "Authorization": `Bearer ${token}`
+    },
+    body: JSON.stringify({ orderId, status })
+  }).then((response) => {
+    if (response.status === 401) {
+      clearToken();
+      showLogin();
+      return;
+    }
+    if (!response.ok) {
+      return response.json().catch(() => ({})).then((data) => {
+        showToast(data.error || "Order status could not be saved.");
+      });
+    }
+  }).catch((error) => {
+    console.error("Order status save error:", error.message);
+    showToast("Order status could not be saved.");
+  });
 }
 
 /** Move an order to the next status in the flow */
@@ -1529,7 +1579,7 @@ function renderDashboard(orders) {
 async function loadAndRender() {
   showLoading();
   try {
-    const orders = await fetchOrders();
+    const [orders] = await Promise.all([fetchOrders(), fetchFulfilmentStatuses()]);
     hideLoading();
     renderDashboard(orders);
     activateTab("home");

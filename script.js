@@ -7,6 +7,8 @@
 
 // ── Data paths ──────────────────────────────────────────────
 const CART_KEY             = "littleOdditiesCabinet";
+const CUSTOMER_TOKEN_KEY   = "lo_customer_token";
+const CUSTOMER_INFO_KEY    = "lo_customer_info";
 const SETTINGS_PATH        = "./data/settings.json";
 const PRODUCTS_PATH        = "./data/catalogue.json";
 const COLLECTIONS_PATH     = "./data/collections.json";
@@ -15,6 +17,7 @@ const MERCHANTS_GUIDE_PATH = "./data/merchants-guide.json";
 const DESK_ENTRIES_PATH    = "./data/desk-entries.json";
 const FEATURED_TREASURE_PATH = "./data/featured-treasure.json";
 const INVENTORY_URL        = "/.netlify/functions/get-inventory";
+const WISHLIST_URL         = "/.netlify/functions/customer-wishlist";
 const IMAGE_ROOT           = "assets/images/products";
 const FREE_SHIPPING_THRESHOLD = 30;
 const SHIPPING_OPTIONS = {
@@ -739,6 +742,11 @@ function buildProductCard(product) {
 
   const stockNotice = `<p class="stock-notice ${available ? "stock-notice--available" : "stock-notice--out"}">${escapeHtml(message)}</p>`;
 
+  const settings = window.SETTINGS || DEFAULT_SETTINGS;
+  const satchelButton = settings.website?.showWishlist
+    ? `<button class="button button-secondary" type="button" data-satchel="${product.id}" data-saved="false">🤍 Save to Satchel</button>`
+    : "";
+
   return `
     <article class="card product-card">
       <div class="product-image">
@@ -763,6 +771,7 @@ function buildProductCard(product) {
       <div class="product-actions">
         <a class="button button-primary" href="product.html?id=${encodeURIComponent(product.id)}">View Treasure</a>
         ${addButton}
+        ${satchelButton}
       </div>
     </article>
   `;
@@ -774,11 +783,66 @@ function attachAddToCartHandlers(root = document) {
   });
 }
 
+/** Fetches the signed-in Traveller's saved productIds (Satchel), or [] if signed out */
+async function fetchWishlistIds() {
+  const token = getCustomerToken();
+  if (!token) return [];
+  try {
+    const response = await fetch(WISHLIST_URL, { headers: { "Authorization": `Bearer ${token}` } });
+    if (!response.ok) return [];
+    const data = await response.json();
+    return data.productIds || [];
+  } catch (e) {
+    return [];
+  }
+}
+
+async function toggleSatchel(productId, button) {
+  if (!getCustomerToken()) {
+    showToast("Sign in as a Recognised Traveller to use your Satchel.");
+    return;
+  }
+  const isSaved = button.dataset.saved === "true";
+  try {
+    const response = await fetch(WISHLIST_URL, {
+      method: isSaved ? "DELETE" : "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${getCustomerToken()}` },
+      body: JSON.stringify({ productId })
+    });
+    if (!response.ok) throw new Error("Satchel request failed.");
+    button.dataset.saved = isSaved ? "false" : "true";
+    button.textContent = isSaved ? "🤍 Save to Satchel" : "💜 In Satchel";
+    showToast(isSaved ? "Removed from your Satchel." : "Saved to your Satchel.");
+  } catch (e) {
+    showToast("Your Satchel could not be updated.");
+  }
+}
+
+function attachSatchelHandlers(root = document) {
+  root.querySelectorAll("[data-satchel]").forEach((button) => {
+    button.addEventListener("click", () => toggleSatchel(button.dataset.satchel, button));
+  });
+}
+
+/** Marks any [data-satchel] buttons under root that are already in the signed-in Traveller's Satchel */
+async function markSavedSatchelButtons(root = document) {
+  const ids = await fetchWishlistIds();
+  if (!ids.length) return;
+  root.querySelectorAll("[data-satchel]").forEach((button) => {
+    if (ids.includes(button.dataset.satchel)) {
+      button.dataset.saved = "true";
+      button.textContent = "💜 In Satchel";
+    }
+  });
+}
+
 function renderProductsGrid(products, selector) {
   const grid = document.querySelector(selector);
   if (!grid) return;
   grid.innerHTML = products.map(buildProductCard).join("");
   attachAddToCartHandlers(grid);
+  attachSatchelHandlers(grid);
+  markSavedSatchelButtons(grid);
 }
 
 
@@ -1363,6 +1427,8 @@ function renderHomePage(products) {
   if (!featuredArea) return;
   featuredArea.innerHTML = products.slice(0, 3).map(buildProductCard).join("");
   attachAddToCartHandlers(featuredArea);
+  attachSatchelHandlers(featuredArea);
+  markSavedSatchelButtons(featuredArea);
 }
 
 function renderShopPage(products) {
@@ -1496,6 +1562,8 @@ function renderCollectionsPage(products) {
     <div class="product-grid">${filtered.map(buildProductCard).join("")}</div>
   `;
   attachAddToCartHandlers(productArea);
+  attachSatchelHandlers(productArea);
+  markSavedSatchelButtons(productArea);
 }
 
 function renderTiersPage(products) {
@@ -1563,6 +1631,8 @@ function renderTiersPage(products) {
     <div class="product-grid">${filtered.map(buildProductCard).join("")}</div>
   `;
   attachAddToCartHandlers(productArea);
+  attachSatchelHandlers(productArea);
+  markSavedSatchelButtons(productArea);
 }
 
 function renderProductPage(products) {
@@ -1587,6 +1657,11 @@ function renderProductPage(products) {
   const addCabinetButton = available
     ? `<button class="button button-primary" type="button" id="add-to-cabinet">Add to Curiosity Cabinet</button>`
     : `<button class="button button-primary" type="button" disabled style="opacity:0.55;cursor:not-allowed;">Currently Unavailable</button>`;
+
+  const settings = window.SETTINGS || DEFAULT_SETTINGS;
+  const satchelButton = settings.website?.showWishlist
+    ? `<button class="button button-secondary" type="button" data-satchel="${product.id}" data-saved="false">🤍 Save to Satchel</button>`
+    : "";
 
   detailArea.innerHTML = `
     <article class="card product-detail-card">
@@ -1614,6 +1689,7 @@ function renderProductPage(products) {
           <div class="detail-actions">
             ${addCabinetButton}
             <a class="button button-secondary" href="cabinet.html">View Cabinet</a>
+            ${satchelButton}
           </div>
         </div>
       </div>
@@ -1626,6 +1702,9 @@ function renderProductPage(products) {
     const addButton = document.querySelector("#add-to-cabinet");
     if (addButton) addButton.addEventListener("click", () => addToCart(product.id));
   }
+
+  attachSatchelHandlers(detailArea);
+  markSavedSatchelButtons(detailArea);
 }
 
 /**
@@ -1987,6 +2066,48 @@ function showToast(text) {
 
 
 // ============================================================
+// Traveller session — shared by every page's header link and
+// by account.js on the Traveller's Keepings pages
+// ============================================================
+
+/** Reads the customer token, checking sessionStorage first (this tab),
+ *  then localStorage ("Remember this Traveller" persists across visits). */
+function getCustomerToken() {
+  return window.sessionStorage.getItem(CUSTOMER_TOKEN_KEY) || window.localStorage.getItem(CUSTOMER_TOKEN_KEY);
+}
+
+function getCustomerInfo() {
+  const raw = window.sessionStorage.getItem(CUSTOMER_INFO_KEY) || window.localStorage.getItem(CUSTOMER_INFO_KEY);
+  try {
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Stores the session token + customer info; remember=true persists across browser restarts */
+function saveCustomerSession(token, customer, remember) {
+  const store = remember ? window.localStorage : window.sessionStorage;
+  store.setItem(CUSTOMER_TOKEN_KEY, token);
+  store.setItem(CUSTOMER_INFO_KEY, JSON.stringify(customer));
+}
+
+function clearCustomerSession() {
+  window.localStorage.removeItem(CUSTOMER_TOKEN_KEY);
+  window.localStorage.removeItem(CUSTOMER_INFO_KEY);
+  window.sessionStorage.removeItem(CUSTOMER_TOKEN_KEY);
+  window.sessionStorage.removeItem(CUSTOMER_INFO_KEY);
+}
+
+/** Updates every page's "Traveller's Keepings" nav link to show the traveller's name when signed in */
+function updateAccountNavLink() {
+  const customer = getCustomerToken() ? getCustomerInfo() : null;
+  document.querySelectorAll(".account-nav-link").forEach((link) => {
+    link.textContent = customer ? `Traveller's Keepings (${customer.name})` : "Traveller's Keepings";
+  });
+}
+
+// ============================================================
 // Navigation helpers
 // ============================================================
 
@@ -2018,6 +2139,7 @@ function initPage() {
     renderGlobalSettings();
     renderCartCount();
     highlightCurrentPage();
+    updateAccountNavLink();
 
     switch (pageId) {
       case "home":           renderHomePage(products);         break;
