@@ -233,46 +233,47 @@ async function initAccountHub() {
   const hub            = document.getElementById("account-hub");
   if (!hub) return; /* Not on account.html */
 
-  const token = getCustomerToken();
-  if (!token) {
+  function showSignedOut() {
     loadingState.classList.add("hidden");
     signedOutState.classList.remove("hidden");
-    return;
   }
 
-  let profile;
   try {
-    profile = await authFetch(PROFILE_URL);
-  } catch {
+    const token = getCustomerToken();
+    if (!token) {
+      showSignedOut();
+      return;
+    }
+
+    const profile = await authFetch(PROFILE_URL);
+
     loadingState.classList.add("hidden");
-    signedOutState.classList.remove("hidden");
-    return;
-  }
+    hub.classList.remove("hidden");
+    document.getElementById("account-traveller-name").textContent = profile.customer.name;
 
-  loadingState.classList.add("hidden");
-  hub.classList.remove("hidden");
-  document.getElementById("account-traveller-name").textContent = profile.customer.name;
-
-  document.getElementById("account-logout-button")?.addEventListener("click", () => {
-    clearCustomerSession();
-    window.location.href = "index.html";
-  });
-
-  document.querySelectorAll(".account-nav-item").forEach((button) => {
-    button.addEventListener("click", () => {
-      const tab = button.dataset.accountTab;
-      activateAccountTab(tab);
-      if (tab === "satchel") loadSatchel();
-      if (tab === "map") loadMap();
-      if (tab === "messages") loadMessages();
-      if (tab === "preferences") fillPreferencesForm(profile.customer);
+    document.getElementById("account-logout-button")?.addEventListener("click", () => {
+      clearCustomerSession();
+      window.location.href = "index.html";
     });
-  });
 
-  fillPreferencesForm(profile.customer);
-  initPreferencesForm();
-  initMapForm();
-  loadSatchel();
+    document.querySelectorAll(".account-nav-item").forEach((button) => {
+      button.addEventListener("click", () => {
+        const tab = button.dataset.accountTab;
+        activateAccountTab(tab);
+        if (tab === "satchel") loadSatchel();
+        if (tab === "map") loadMap();
+        if (tab === "messages") loadMessages();
+        if (tab === "preferences") fillPreferencesForm(profile.customer);
+      });
+    });
+
+    fillPreferencesForm(profile.customer);
+    initPreferencesForm();
+    initMapForm();
+    loadSatchel();
+  } catch (error) {
+    showSignedOut();
+  }
 }
 
 /* ── Traveller's Satchel (Wishlist) ──────────────────────────── */
