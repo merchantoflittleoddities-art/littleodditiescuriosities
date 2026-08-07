@@ -421,10 +421,16 @@ let allInventory = {};
 /** Cached products array from catalogue.json */
 let allProducts  = [];
 
-const INV_OUT_OF_STOCK_LABELS = {
-  roaming:   "🕯️ Roaming the land...",
-  returning: "🌙 Returning before long...",
-  bespoke:   "✦ Available to order..."
+const STOREFRONT_MESSAGES = {
+  // Available State Messages
+  workshop:  { label: "⚒️ In the workshop...", type: "available" },
+  shelves:   { label: "📦 Upon the shelves...", type: "available" },
+  remaining: { label: "⚠️ Only {stock} remain...", type: "available" },
+  request:   { label: "📜 Upon traveller's request...", type: "available" },
+  // Unavailable / Out of Stock Messages
+  roaming:   { label: "🕯️ Roaming the land...", type: "unavailable" },
+  returning: { label: "🌙 Returning before long...", type: "unavailable" },
+  bespoke:   { label: "✦ Available to order...", type: "unavailable" }
 };
 
 async function fetchInventory() {
@@ -545,7 +551,7 @@ function renderInventoryTable(products, inventory, query = "", statusFilter = ""
   const productMsgKeys = {};
   filtered.forEach((p) => {
     const inv = inventory[p.id] || {};
-    productMsgKeys[p.id] = inv.outOfStockMessage || "roaming";
+    productMsgKeys[p.id] = inv.storefrontMessage || inv.outOfStockMessage || "shelves";
   });
 
   tbody.innerHTML = filtered.map((product) => {
@@ -553,7 +559,7 @@ function renderInventoryTable(products, inventory, query = "", statusFilter = ""
     const stock   = inv.stock ?? null;
     const status  = resolveStockStatus(product.id);
     const badge   = stockBadgeHtml(status, stock);
-    const msgKey  = inv.outOfStockMessage || "roaming";
+    const msgKey  = inv.storefrontMessage || inv.outOfStockMessage || "shelves";
     const avail   = inv.available !== false;
 
     const hasImage = Array.isArray(product.images) && product.images.length;
@@ -561,10 +567,25 @@ function renderInventoryTable(products, inventory, query = "", statusFilter = ""
       ? `<img class="inv-product-img" src="assets/images/products/${product.id}/${product.images[0]}" alt="${escapeHtml(product.name)}" onerror="this.style.display='none'">`
       : `<div class="inv-product-img-placeholder">${escapeHtml(product.icon || "✦")}</div>`;
 
-    /* Build message selector */
-    const msgOptions = Object.entries(INV_OUT_OF_STOCK_LABELS)
-      .map(([k, v]) => `<option value="${k}"${k === msgKey ? " selected" : ""}>${v}</option>`)
+    /* Build message selector grouped by available and unavailable messages */
+    const availableMsgOptions = Object.entries(STOREFRONT_MESSAGES)
+      .filter(([, m]) => m.type === "available")
+      .map(([k, m]) => `<option value="${k}"${k === msgKey ? " selected" : ""}>${m.label.replace("{stock}", stock !== null ? stock : "∞")}</option>`)
       .join("");
+
+    const unavailableMsgOptions = Object.entries(STOREFRONT_MESSAGES)
+      .filter(([, m]) => m.type === "unavailable")
+      .map(([k, m]) => `<option value="${k}"${k === msgKey ? " selected" : ""}>${m.label}</option>`)
+      .join("");
+
+    const msgOptions = `
+      <optgroup label="Available Messages">
+        ${availableMsgOptions}
+      </optgroup>
+      <optgroup label="Unavailable Messages">
+        ${unavailableMsgOptions}
+      </optgroup>
+    `;
 
     return `
       <tr data-product-id="${product.id}">
@@ -635,7 +656,7 @@ function renderInventoryTable(products, inventory, query = "", statusFilter = ""
 
     const messageSelect = row.querySelector("select[data-action='setMessage']");
     if (messageSelect) {
-      messageSelect.value = productMsgKeys[productId] || "roaming";
+      messageSelect.value = productMsgKeys[productId] || "shelves";
     }
   });
 
@@ -645,19 +666,21 @@ function renderInventoryTable(products, inventory, query = "", statusFilter = ""
 function exportInventoryCSV(products, inventory) {
   const headers = [
     "Treasure", "Collection", "Stock", "Status", "Low Stock Threshold",
-    "Out of Stock Message", "Available", "Last Updated"
+    "Storefront Message", "Available", "Last Updated"
   ];
 
   const rows = products.map((p) => {
     const inv    = inventory[p.id] || {};
     const status = resolveStockStatus(p.id);
+    const msgKey = inv.storefrontMessage || inv.outOfStockMessage || "shelves";
+    const msgDef = STOREFRONT_MESSAGES[msgKey] || STOREFRONT_MESSAGES.shelves;
     return [
       p.name,
       p.collection,
       inv.stock === null || inv.stock === undefined ? "Unlimited" : inv.stock,
       status,
       inv.lowStockThreshold ?? 3,
-      inv.outOfStockMessage || "roaming",
+      msgDef.label,
       inv.available !== false ? "Yes" : "No",
       inv.lastUpdated ? new Date(inv.lastUpdated).toLocaleDateString("en-GB") : "Never"
     ].map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",");

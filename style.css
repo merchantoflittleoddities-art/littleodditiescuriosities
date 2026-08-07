@@ -603,6 +603,13 @@ img {
   font-style: italic;
 }
 
+.stock-notice--available {
+  background: rgba(100, 200, 120, 0.08);
+  border: 1px solid rgba(100, 200, 120, 0.25);
+  color: #72a880;
+  font-style: italic;
+}
+
 .stock-notice--low {
   background: rgba(245, 200, 66, 0.08);
   border: 1px solid rgba(245, 200, 66, 0.3);
