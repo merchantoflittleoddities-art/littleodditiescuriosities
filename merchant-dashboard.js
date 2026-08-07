@@ -535,6 +535,19 @@ function renderInventoryTable(products, inventory, query = "", statusFilter = ""
     return;
   }
 
+  /* Build the per-product message map before writing innerHTML so we can
+     reliably restore each select's value afterwards.  Browsers do not always
+     honour the `selected` attribute on <option> elements that are created
+     through innerHTML — they may carry over the last user-interaction value
+     from the previous render, making every product appear to share the same
+     Out of Stock Message.  Setting select.value explicitly after the DOM is
+     written is the authoritative fix. */
+  const productMsgKeys = {};
+  filtered.forEach((p) => {
+    const inv = inventory[p.id] || {};
+    productMsgKeys[p.id] = inv.outOfStockMessage || "roaming";
+  });
+
   tbody.innerHTML = filtered.map((product) => {
     const inv     = inventory[product.id] || {};
     const stock   = inv.stock ?? null;
@@ -608,6 +621,12 @@ function renderInventoryTable(products, inventory, query = "", statusFilter = ""
       </tr>
     `;
   }).join("");
+
+  /* Explicitly set the value of every message select so each product
+     displays its own independently-stored Out of Stock Message. */
+  tbody.querySelectorAll("select[data-action='setMessage']").forEach((sel) => {
+    sel.value = productMsgKeys[sel.dataset.productId] || "roaming";
+  });
 
   renderInventoryStats(products, inventory);
 }
