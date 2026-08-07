@@ -4,8 +4,13 @@
 
    Creates a new Traveller account ("Become a Recognised Traveller").
 
+   Public registration can only ever create Traveller accounts —
+   `role` is always hardcoded here and never read from the request
+   body. Merchant accounts are only created by promoting an existing
+   Traveller via promote-merchant.js.
+
    POST body: { name, email, password }
-   Response:  { token, customer: { id, name, email } }
+   Response:  { token, customer: { id, name, email, role } }
    ============================================================= */
 
 const crypto = require("crypto");
@@ -55,6 +60,7 @@ exports.handler = async function (event) {
     email: key,
     passwordHash: hash,
     salt,
+    role: "traveller",
     notificationPrefs: { orderUpdates: true },
     createdAt: new Date().toISOString()
   };
@@ -68,7 +74,7 @@ exports.handler = async function (event) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       token,
-      customer: { id: customer.id, name: customer.name, email: customer.email }
+      customer: { id: customer.id, name: customer.name, email: customer.email, role: customer.role }
     })
   };
 };

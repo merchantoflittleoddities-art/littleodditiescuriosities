@@ -2099,11 +2099,15 @@ function clearCustomerSession() {
   window.sessionStorage.removeItem(CUSTOMER_INFO_KEY);
 }
 
-/** Updates every page's "Traveller's Keepings" nav link to show the traveller's name when signed in */
+/** Updates every page's "Traveller's Keepings" nav link to show the traveller's name when signed in,
+ *  and reveals the "✨ Merchant's Ledger" nav link only for Merchant accounts */
 function updateAccountNavLink() {
   const customer = getCustomerToken() ? getCustomerInfo() : null;
   document.querySelectorAll(".account-nav-link").forEach((link) => {
     link.textContent = customer ? `Traveller's Keepings (${customer.name})` : "Traveller's Keepings";
+  });
+  document.querySelectorAll(".merchant-nav-link").forEach((link) => {
+    link.classList.toggle("hidden", customer?.role !== "merchant");
   });
 }
 

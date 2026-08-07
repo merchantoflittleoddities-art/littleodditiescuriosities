@@ -5,7 +5,7 @@
    Signs in an existing Traveller ("Rediscover the Cabinet").
 
    POST body: { email, password }
-   Response:  { token, customer: { id, name, email } }
+   Response:  { token, customer: { id, name, email, role } }
    ============================================================= */
 
 const { connectLambda } = require("@netlify/blobs");
@@ -51,7 +51,7 @@ exports.handler = async function (event) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       token,
-      customer: { id: customer.id, name: customer.name, email: customer.email }
+      customer: { id: customer.id, name: customer.name, email: customer.email, role: customer.role || "traveller" }
     })
   };
 };

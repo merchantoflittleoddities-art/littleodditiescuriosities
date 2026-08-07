@@ -34,6 +34,7 @@
         <a href="merchants-guide.html">Merchant's Guide</a>
         <a href="contact.html">Send Word to the Merchant</a>
         <a href="account.html" class="account-nav-link">Traveller's Keepings</a>
+        <a href="merchant-dashboard.html" class="merchant-nav-link hidden">✨ Merchant's Ledger</a>
         <a href="cabinet.html">Curiosity Cabinet <span class="cart-count">0</span></a>
       </nav>
     </div>
@@ -64,6 +65,13 @@
       <div class="account-hub-header">
         <h2>✦ Welcome back, <span id="account-traveller-name">Traveller</span> ✦</h2>
         <button class="button button-secondary" id="account-logout-button" type="button">Continue Your Travels</button>
+      </div>
+
+      <!-- Shown only for Merchant accounts -->
+      <div class="card merchant-welcome-card hidden" id="account-merchant-card">
+        <p>🕯️ Welcome back, Merchant.</p>
+        <p>The workshop has been waiting for your return.</p>
+        <a class="button button-primary" href="merchant-dashboard.html">✨ Open Merchant's Ledger</a>
       </div>
 
       <div class="account-layout">
