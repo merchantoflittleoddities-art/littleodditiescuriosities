@@ -14,8 +14,20 @@ const {
   hashPassword,
   createToken,
   updateCustomerRecordWithRetry,
-  resetTokensStore
+  resetTokensStore,
+  hashSha256Hex,
+  makeResetTokenKeyFromHash,
+  checkAndBumpResetThrottle
 } = require("./_customer-lib");
+
+const CONSUME_THROTTLE_WINDOW_MS = 15 * 60 * 1000;
+const CONSUME_THROTTLE_BLOCK_MS = 15 * 60 * 1000;
+const CONSUME_THROTTLE_IP_MAX = 25;
+const CONSUME_THROTTLE_GLOBAL_MAX = 2500;
+
+function invalidTokenResponse() {
+  return { statusCode: 400, body: JSON.stringify({ error: "That reset link has expired or is no longer valid. Please request a new one." }) };
+}
 
 exports.handler = async function (event) {
   if (event.httpMethod !== "POST") {
@@ -23,6 +35,17 @@ exports.handler = async function (event) {
   }
 
   connectLambda(event);
+
+  const throttle = await checkAndBumpResetThrottle(event, {
+    scope: "consume",
+    ipMax: CONSUME_THROTTLE_IP_MAX,
+    globalMax: CONSUME_THROTTLE_GLOBAL_MAX,
+    windowMs: CONSUME_THROTTLE_WINDOW_MS,
+    blockMs: CONSUME_THROTTLE_BLOCK_MS
+  });
+  if (!throttle.ok) {
+    return { statusCode: 429, body: JSON.stringify({ error: "Too many reset attempts. Please try again later." }) };
+  }
 
   let token, password;
   try {
@@ -39,21 +62,52 @@ exports.handler = async function (event) {
   }
 
   const resetStore = resetTokensStore();
-  const record = await resetStore.get(token, { type: "json" });
+  const tokenHash = hashSha256Hex(token);
+  const tokenKey = makeResetTokenKeyFromHash(tokenHash);
 
-  if (!record || Date.now() > record.expires) {
-    return { statusCode: 400, body: JSON.stringify({ error: "That reset link has expired or is no longer valid. Please request a new one." }) };
+  let record;
+  try {
+    record = await resetStore.get(tokenKey, { type: "json" });
+  } catch (error) {
+    console.error("customer-reset-password: failed to read reset token:", error.message);
+    return { statusCode: 503, body: JSON.stringify({ error: "Password reset is temporarily unavailable. Please try again." }) };
+  }
+
+  const expiresMs = Number(record?.expiresMs);
+  if (!record || record.version !== 2 || !Number.isFinite(expiresMs) || Date.now() > expiresMs) {
+    return invalidTokenResponse();
   }
 
   let updateResult;
+  const now = Date.now();
   try {
     updateResult = await updateCustomerRecordWithRetry(record.customerId, (customer) => {
+      const currentResetNonce = Number(customer.passwordResetNonce) || 0;
+      const recordNonce = Number(record.resetNonce);
+
+      if (!Number.isFinite(recordNonce) || recordNonce !== currentResetNonce) {
+        const staleToken = new Error("Reset token nonce no longer matches active customer reset nonce.");
+        staleToken.code = "RESET_TOKEN_STALE";
+        throw staleToken;
+      }
+
       const { salt, hash } = hashPassword(password);
       customer.passwordHash = hash;
       customer.salt = salt;
+
+      const existingCutoff = Number(customer.tokenRevokedAfterMs);
+      const tokenRevokedAfterMs = Number.isFinite(existingCutoff)
+        ? Math.max(existingCutoff, now)
+        : now;
+
+      customer.tokenRevokedAfterMs = tokenRevokedAfterMs;
+      customer.passwordResetNonce = currentResetNonce + 1;
       return customer;
     });
   } catch (error) {
+    if (error.code === "RESET_TOKEN_STALE") {
+      return invalidTokenResponse();
+    }
     if (error.code === "CUSTOMER_WRITE_CONFLICT") {
       return { statusCode: 503, body: JSON.stringify({ error: "Your password could not be reset right now. Please try again." }) };
     }
@@ -65,8 +119,17 @@ exports.handler = async function (event) {
   }
 
   const customer = updateResult.customer;
+  const cutoff = Number(customer.tokenRevokedAfterMs) || 0;
 
-  await resetStore.delete(token);
+  try {
+    await resetStore.delete(tokenKey);
+  } catch (error) {
+    console.error("customer-reset-password: failed to delete consumed token:", error.message);
+  }
+
+  while (Date.now() <= cutoff) {
+    /* Ensure post-reset token timestamp is strictly later than revocation cutoff. */
+  }
 
   const sessionToken = createToken(customer.id);
   return {

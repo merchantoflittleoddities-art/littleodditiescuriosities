@@ -19,6 +19,7 @@ const crypto = require("crypto");
 const { getStore } = require("@netlify/blobs");
 
 const TOKEN_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000; /* 30 days — client decides localStorage vs sessionStorage */
+const RESET_THROTTLE_STORE_NAME = "customer-reset-throttle";
 
 /* ── Passwords ─────────────────────────────────────────────── */
 
@@ -80,6 +81,122 @@ function getTokenIssuedAtMs(token) {
   if (parts.length !== 3) return null;
   const issuedAtMs = parseInt(parts[1], 10);
   return Number.isFinite(issuedAtMs) ? issuedAtMs : null;
+}
+
+function hashSha256Hex(value) {
+  return crypto.createHash("sha256").update(String(value || "")).digest("hex");
+}
+
+function makeResetTokenKeyFromHash(tokenHashHex) {
+  return `rtk:sha256:${tokenHashHex}`;
+}
+
+function getTrustedRequesterIp(event) {
+  const headers = event?.headers || {};
+  const nfIp = headers["x-nf-client-connection-ip"] || headers["X-Nf-Client-Connection-Ip"];
+  if (nfIp) return String(nfIp).trim();
+
+  const forwarded = headers["x-forwarded-for"] || headers["X-Forwarded-For"] || "";
+  const first = String(forwarded).split(",")[0].trim();
+  return first || "unknown";
+}
+
+function resetThrottleStore() {
+  return getStore(RESET_THROTTLE_STORE_NAME);
+}
+
+function buildDefaultThrottleState(now) {
+  return {
+    version: 1,
+    windowStartMs: now,
+    count: 0,
+    blockedUntilMs: 0
+  };
+}
+
+async function checkAndBumpResetThrottle(event, options) {
+  const {
+    scope,
+    ipMax,
+    globalMax,
+    windowMs,
+    blockMs,
+    maxAttempts = 5
+  } = options;
+
+  const now = Date.now();
+  const ip = getTrustedRequesterIp(event);
+  const ipHash = hashSha256Hex(ip).slice(0, 32);
+  const store = resetThrottleStore();
+
+  const keys = [
+    `throttle:${scope}:ip:${ipHash}`,
+    `throttle:${scope}:global`
+  ];
+
+  const limits = {
+    [keys[0]]: ipMax,
+    [keys[1]]: globalMax
+  };
+
+  for (const key of keys) {
+    const limit = limits[key];
+    let wrote = false;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      const blob = await store.getWithMetadata(key, {
+        type: "json",
+        consistency: "strong"
+      });
+
+      let state = blob?.data;
+      if (!state || typeof state !== "object") {
+        state = buildDefaultThrottleState(now);
+      }
+
+      const blockedUntil = Number(state.blockedUntilMs) || 0;
+      if (blockedUntil > now) {
+        return { ok: false, retryAfterMs: blockedUntil - now };
+      }
+
+      const windowStartMs = Number(state.windowStartMs) || now;
+      const count = Number(state.count) || 0;
+      const inWindow = now - windowStartMs < windowMs;
+
+      state.windowStartMs = inWindow ? windowStartMs : now;
+      state.count = inWindow ? count + 1 : 1;
+      state.blockedUntilMs = 0;
+
+      if (state.count > limit) {
+        state.blockedUntilMs = now + blockMs;
+      }
+
+      const etag = blob?.etag || null;
+      const setOptions = etag ? { onlyIfMatch: etag } : { onlyIfNew: true };
+
+      try {
+        await store.setJSON(key, state, setOptions);
+        wrote = true;
+      } catch (error) {
+        if (isConditionalWriteConflict(error) && attempt < maxAttempts) {
+          continue;
+        }
+        throw error;
+      }
+
+      if (state.count > limit) {
+        return { ok: false, retryAfterMs: blockMs };
+      }
+
+      break;
+    }
+
+    if (!wrote) {
+      throw new Error("reset-throttle: conditional writes exhausted retry budget.");
+    }
+  }
+
+  return { ok: true, retryAfterMs: 0 };
 }
 
 function cloneCustomerRecord(customer) {
@@ -213,6 +330,10 @@ module.exports = {
   verifyPassword,
   createToken,
   verifyToken,
+  hashSha256Hex,
+  makeResetTokenKeyFromHash,
+  getTrustedRequesterIp,
+  checkAndBumpResetThrottle,
   getBearerToken,
   authenticate,
   updateCustomerRecordWithRetry,
