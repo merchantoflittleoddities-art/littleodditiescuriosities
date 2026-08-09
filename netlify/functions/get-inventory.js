@@ -35,6 +35,10 @@ exports.handler = async function (event) {
     const raw       = await store.get("all", { type: "text" });
     const inventory = raw ? JSON.parse(raw) : {};
 
+    if (typeof inventory !== "object" || inventory === null || Array.isArray(inventory)) {
+      throw new Error("Inventory payload is malformed.");
+    }
+
     return {
       statusCode: 200,
       headers: {
@@ -47,11 +51,17 @@ exports.handler = async function (event) {
 
   } catch (error) {
     console.error("get-inventory error:", error.message);
-    /* On failure, return empty inventory — products stay available */
+    /* Fail closed: inventory could not be verified */
     return {
-      statusCode: 200,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ inventory: {} })
+      statusCode: 503,
+      headers: {
+        "Content-Type":                "application/json",
+        "Cache-Control":               "no-store",
+        "Access-Control-Allow-Origin": "*"
+      },
+      body: JSON.stringify({
+        error: "Inventory could not be verified. Please try again shortly."
+      })
     };
   }
 };

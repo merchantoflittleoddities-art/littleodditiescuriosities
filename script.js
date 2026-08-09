@@ -182,6 +182,15 @@ function saveCart(cart) {
 }
 
 function addToCart(id, quantity = 1) {
+  const availabilityState = getProductAvailabilityState(id);
+  if (availabilityState !== "available") {
+    const blockedMessage = availabilityState === "unverified"
+      ? "This treasure cannot be added while availability is being verified."
+      : "This treasure is currently unavailable.";
+    showToast(blockedMessage);
+    return;
+  }
+
   const cart = getCart();
   const item = cart.find((entry) => entry.id === id);
   if (item) {
@@ -248,8 +257,8 @@ function resolveShippingOption(subtotal, selectedShippingId) {
 
 function getCheckoutTotals(cart = getCart(), products = getAllProducts(), selectedShippingId = "") {
   const subtotal       = getCartTotal(cart, products);
-  const shippingOption  = resolveShippingOption(subtotal, selectedShippingId);
-  const shippingCost    = shippingOption ? shippingOption.price : 0;
+  const shippingOption = resolveShippingOption(subtotal, selectedShippingId);
+  const shippingCost   = shippingOption ? shippingOption.price : 0;
   return {
     subtotal,
     shippingOption,
@@ -515,20 +524,34 @@ async function loadSettings() {
 
 /**
  * Fetches live inventory from the Netlify Function.
- * On failure, returns an empty object so all products remain available.
+ * On failure, marks inventory as unverified so purchasing fails closed.
  * window.ALL_INVENTORY shape: { [productId]: { stock, lowStockThreshold, available, outOfStockMessage } }
  */
 async function loadInventory() {
   try {
     const response = await fetch(INVENTORY_URL, { cache: "no-store" });
     if (!response.ok) throw new Error("Inventory could not be loaded.");
-    const { inventory } = await response.json();
-    window.ALL_INVENTORY = (typeof inventory === "object" && inventory !== null) ? inventory : {};
+    const payload = await response.json();
+    const inventory = payload?.inventory;
+
+    if (typeof inventory !== "object" || inventory === null || Array.isArray(inventory)) {
+      throw new Error("Inventory response was malformed.");
+    }
+
+    window.ALL_INVENTORY = inventory;
+    window.INVENTORY_VERIFIED = true;
+    window.INVENTORY_ERROR = null;
     return window.ALL_INVENTORY;
   } catch (e) {
     window.ALL_INVENTORY = {};
+    window.INVENTORY_VERIFIED = false;
+    window.INVENTORY_ERROR = e?.message || "Inventory could not be verified.";
     return {};
   }
+}
+
+function isInventoryVerified() {
+  return window.INVENTORY_VERIFIED === true;
 }
 
 /**
@@ -540,24 +563,37 @@ function getInventoryItem(productId) {
 }
 
 /**
+ * Distinguishes inventory verification failure from true out-of-stock states.
+ */
+function getProductAvailabilityState(productId) {
+  if (!isInventoryVerified()) return "unverified";
+
+  const inv = getInventoryItem(productId);
+  if (!inv) return "available";             /* not tracked -> available */
+  if (inv.available === false) return "out"; /* manually disabled */
+  if (inv.stock === null) return "available";/* unlimited */
+
+  return Number(inv.stock) > 0 ? "available" : "out";
+}
+
+/**
  * Returns true if a product is purchasable based on its inventory entry.
  * Products with no inventory entry are considered always available.
  */
 function isProductAvailable(productId) {
-  const inv = getInventoryItem(productId);
-  if (!inv) return true;                     /* not tracked → available */
-  if (inv.available === false) return false; /* manually disabled */
-  if (inv.stock === null) return true;       /* unlimited */
-  return inv.stock > 0;
+  return getProductAvailabilityState(productId) === "available";
 }
 
 /**
  * Returns true if a product is low on stock (but still purchasable).
  */
 function isProductLowStock(productId) {
+  if (!isInventoryVerified()) return false;
   const inv = getInventoryItem(productId);
   if (!inv || inv.stock === null || inv.available === false) return false;
-  return inv.stock > 0 && inv.stock <= (inv.lowStockThreshold || 3);
+  const stock = Number(inv.stock);
+  if (!Number.isFinite(stock)) return false;
+  return stock > 0 && stock <= (inv.lowStockThreshold || 3);
 }
 
 /** Storefront Message registry and resolvers */
@@ -579,10 +615,14 @@ const UNAVAILABLE_STOREFRONT_MESSAGES = {
 
 /** Returns the resolved storefront message for a product */
 function getStorefrontMessage(productId) {
+  const availabilityState = getProductAvailabilityState(productId);
   const inv = getInventoryItem(productId);
-  const available = isProductAvailable(productId);
 
-  if (available) {
+  if (availabilityState === "unverified") {
+    return "Availability could not be verified right now. Please try again shortly.";
+  }
+
+  if (availabilityState === "available") {
     const key = inv?.availableStorefrontMessage || inv?.availableMessage || (inv?.storefrontMessage in AVAILABLE_STOREFRONT_MESSAGES ? inv?.storefrontMessage : "shelves");
     const msgFn = AVAILABLE_STOREFRONT_MESSAGES[key] || AVAILABLE_STOREFRONT_MESSAGES.shelves;
     return msgFn(inv?.stock);
@@ -733,14 +773,17 @@ function buildProductCard(product) {
   const description  = product.description || "Bracelet details will be added soon.";
   const displayPrice = formatPrice(getProductPrice(product));
 
-  const available = isProductAvailable(product.id);
+  const availabilityState = getProductAvailabilityState(product.id);
+  const available = availabilityState === "available";
+  const unverified = availabilityState === "unverified";
   const message   = getStorefrontMessage(product.id);
 
   const addButton = available
     ? `<button class="button button-secondary" type="button" data-add-to-cart="${product.id}">Add to Cabinet</button>`
-    : `<button class="button button-secondary" type="button" disabled style="opacity:0.55;cursor:not-allowed;">Currently Unavailable</button>`;
+    : `<button class="button button-secondary" type="button" disabled style="opacity:0.55;cursor:not-allowed;">${unverified ? "Availability Unverified" : "Currently Unavailable"}</button>`;
 
-  const stockNotice = `<p class="stock-notice ${available ? "stock-notice--available" : "stock-notice--out"}">${escapeHtml(message)}</p>`;
+  const stockStateClass = available ? "stock-notice--available" : (unverified ? "stock-notice--unknown" : "stock-notice--out");
+  const stockNotice = `<p class="stock-notice ${stockStateClass}">${escapeHtml(message)}</p>`;
 
   const settings = window.SETTINGS || DEFAULT_SETTINGS;
   const satchelButton = settings.website?.showWishlist
@@ -1207,9 +1250,12 @@ function buildFeaturedTreasure(feature, product) {
 
   const signoff = String(feature.signoff || "").trim();
 
-  const available = isProductAvailable(product.id);
+  const availabilityState = getProductAvailabilityState(product.id);
+  const available = availabilityState === "available";
+  const unverified = availabilityState === "unverified";
   const message   = getStorefrontMessage(product.id);
-  const stockNotice = `<p class="stock-notice ${available ? "stock-notice--available" : "stock-notice--out"}">${escapeHtml(message)}</p>`;
+  const stockStateClass = available ? "stock-notice--available" : (unverified ? "stock-notice--unknown" : "stock-notice--out");
+  const stockNotice = `<p class="stock-notice ${stockStateClass}">${escapeHtml(message)}</p>`;
 
   return `
     <article class="featured-treasure">
@@ -1649,14 +1695,21 @@ function renderProductPage(products) {
   const tierMeta      = getTierMeta(product.tier);
   const displayPrice  = formatPrice(getProductPrice(product));
   const packagingText = tierMeta?.packaging || product.packaging || "Standard Handmade Packaging";
-  const available     = isProductAvailable(product.id);
+  const availabilityState = getProductAvailabilityState(product.id);
+  const available     = availabilityState === "available";
+  const unverified    = availabilityState === "unverified";
   const message       = getStorefrontMessage(product.id);
 
-  const stockNotice = `<p class="stock-notice ${available ? "stock-notice--available" : "stock-notice--out"}">${escapeHtml(message)}</p>`;
+  const stockStateClass = available ? "stock-notice--available" : (unverified ? "stock-notice--unknown" : "stock-notice--out");
+  const stockNotice = `<p class="stock-notice ${stockStateClass}">${escapeHtml(message)}</p>`;
 
   const addCabinetButton = available
     ? `<button class="button button-primary" type="button" id="add-to-cabinet">Add to Curiosity Cabinet</button>`
-    : `<button class="button button-primary" type="button" disabled style="opacity:0.55;cursor:not-allowed;">Currently Unavailable</button>`;
+    : `<button class="button button-primary" type="button" disabled style="opacity:0.55;cursor:not-allowed;">${unverified ? "Availability Unverified" : "Currently Unavailable"}</button>`;
+
+  const availabilityLabel = available
+    ? "Available"
+    : (unverified ? "Availability temporarily unavailable" : "Currently unavailable");
 
   const settings = window.SETTINGS || DEFAULT_SETTINGS;
   const satchelButton = settings.website?.showWishlist
@@ -1674,7 +1727,7 @@ function renderProductPage(products) {
             <p class="price-detail">${displayPrice}</p>
             <p>${product.description || "Description will be added soon."}</p>
             ${stockNotice}
-            <p class="availability">${available ? "Available" : "Currently unavailable"}</p>
+            <p class="availability">${availabilityLabel}</p>
           </div>
         </div>
         <div class="product-detail-meta">
@@ -1830,7 +1883,7 @@ function renderCheckoutPage() {
     if (subtotalElement) subtotalElement.textContent = formatPrice(totals.subtotal);
     if (shippingElement) shippingElement.textContent = formatPrice(totals.shippingCost);
     if (totalElement) totalElement.textContent = formatPrice(totals.total);
-    if (checkoutButton) checkoutButton.disabled = !totals.shippingOption;
+    if (checkoutButton) checkoutButton.disabled = !totals.shippingOption || !isInventoryVerified();
   }
 
   document.querySelectorAll("input[name='shipping-method']").forEach((input) => {
@@ -1838,6 +1891,13 @@ function renderCheckoutPage() {
   });
 
   syncCheckoutTotals();
+
+  if (!isInventoryVerified() && shippingContainer) {
+    shippingContainer.insertAdjacentHTML(
+      "beforeend",
+      `<p class="muted" style="margin-top:8px;">Availability could not be verified right now. Checkout is temporarily unavailable.</p>`
+    );
+  }
 
   if (checkoutButton) {
     checkoutButton.addEventListener("click", () => initiateStripeCheckout(cart, products));
@@ -1847,13 +1907,23 @@ function renderCheckoutPage() {
 /**
  * Posts the cart to the Netlify Function and redirects to Stripe Checkout.
  *
- * The function receives purchase intent only, resolves pricing server-side,
- * creates a Stripe Checkout Session, and returns a hosted payment URL.
+ * The function receives purchase intent only (productId + quantity),
+ * resolves pricing server-side, creates a Stripe Checkout Session,
+ * and returns a hosted payment URL.
  */
 async function initiateStripeCheckout(cart, products) {
   const button = document.querySelector("#checkout-button");
   const selectedShippingId = getSelectedShippingId();
   const totals = getCheckoutTotals(cart, products, selectedShippingId);
+
+  if (!isInventoryVerified()) {
+    showToast("Availability could not be verified. Please try again shortly.");
+    if (button) {
+      button.disabled = true;
+      button.textContent = "🕯️ Proceed to Secure Payment";
+    }
+    return;
+  }
 
   // Disable the button and show a loading message while the request is in flight
   if (button) {
@@ -1875,13 +1945,17 @@ async function initiateStripeCheckout(cart, products) {
     return;
   }
 
-  // Build the line items array the Netlify Function expects.
+  // Build purchase-intent line items only; pricing is resolved server-side
   const lineItems = cart
-    .map((entry) => ({
-      productId: entry.id,
-      quantity:  entry.quantity
-    }))
-    .filter((entry) => Boolean(entry.productId));
+    .map((entry) => {
+      const product = products.find((p) => p.id === entry.id);
+      if (!product) return null;
+      return {
+        productId: product.id,
+        quantity:  entry.quantity
+      };
+    })
+    .filter(Boolean);
 
   if (!lineItems.length) {
     showToast("Your Curiosity Cabinet appears to be empty.");
@@ -2115,6 +2189,9 @@ function highlightCurrentPage() {
 
 function initPage() {
   const pageId = document.body.dataset.page;
+
+  window.INVENTORY_VERIFIED = false;
+  window.INVENTORY_ERROR = "Inventory has not been verified yet.";
 
   Promise.all([
     loadSettings(),
