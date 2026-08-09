@@ -20,6 +20,7 @@ const RESET_PASSWORD_URL   = "/.netlify/functions/customer-reset-password";
 const PROFILE_URL          = "/.netlify/functions/customer-profile";
 const ADDRESSES_URL        = "/.netlify/functions/customer-addresses";
 const CUSTOMER_ORDERS_URL  = "/.netlify/functions/customer-orders";
+const CUSTOMER_LOGOUT_URL  = "/.netlify/functions/customer-logout";
 /* WISHLIST_URL is already declared in script.js (shared with the satchel
    product-card handlers), which loads before this file in the same scope. */
 
@@ -253,9 +254,43 @@ async function initAccountHub() {
     document.getElementById("account-traveller-name").textContent = profile.customer.name;
     document.getElementById("account-merchant-card")?.classList.toggle("hidden", profile.customer.role !== "merchant");
 
-    document.getElementById("account-logout-button")?.addEventListener("click", () => {
-      clearCustomerSession();
-      window.location.href = "index.html";
+    document.getElementById("account-logout-button")?.addEventListener("click", async () => {
+      const logoutButton = document.getElementById("account-logout-button");
+      if (!logoutButton) return;
+
+      const originalLabel = logoutButton.textContent;
+      logoutButton.disabled = true;
+      logoutButton.textContent = "Signing out...";
+
+      try {
+        const token = getCustomerToken();
+        const response = await fetch(CUSTOMER_LOGOUT_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { "Authorization": `Bearer ${token}` } : {})
+          }
+        });
+
+        const data = await response.json().catch(() => ({}));
+
+        if (response.status === 401) {
+          clearCustomerSession();
+          window.location.href = "signin.html";
+          return;
+        }
+
+        if (!response.ok) {
+          throw new Error(data.error || "Sign out could not be completed. Please try again.");
+        }
+
+        clearCustomerSession();
+        window.location.href = "index.html";
+      } catch (error) {
+        alert(error.message || "Sign out could not be completed. Please try again.");
+        logoutButton.disabled = false;
+        logoutButton.textContent = originalLabel;
+      }
     });
 
     document.querySelectorAll(".account-nav-item").forEach((button) => {

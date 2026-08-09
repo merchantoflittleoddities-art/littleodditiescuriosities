@@ -24,10 +24,19 @@ async function loadAddresses(store, customerId) {
 exports.handler = async function (event) {
   connectLambda(event);
 
-  const customerId = authenticate(event);
-  if (!customerId) {
-    return { statusCode: 401, body: JSON.stringify({ error: "Please sign in again." }) };
+  const auth = await authenticate(event);
+  if (!auth.ok) {
+    return {
+      statusCode: auth.statusCode,
+      body: JSON.stringify({
+        error: auth.statusCode === 503
+          ? "Authentication state could not be verified. Please try again."
+          : "Please sign in again."
+      })
+    };
   }
+
+  const customerId = auth.customerId;
 
   const store = addressesStore();
 

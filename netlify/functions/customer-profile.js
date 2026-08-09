@@ -18,7 +18,7 @@ const { connectLambda } = require("@netlify/blobs");
 const {
   hashPassword,
   authenticate,
-  customersStore,
+  updateCustomerRecordWithRetry,
   customerEmailsStore,
   normaliseEmail
 } = require("./_customer-lib");
@@ -36,16 +36,19 @@ function publicShape(customer) {
 exports.handler = async function (event) {
   connectLambda(event);
 
-  const customerId = authenticate(event);
-  if (!customerId) {
-    return { statusCode: 401, body: JSON.stringify({ error: "Please sign in again." }) };
+  const auth = await authenticate(event);
+  if (!auth.ok) {
+    return {
+      statusCode: auth.statusCode,
+      body: JSON.stringify({
+        error: auth.statusCode === 503
+          ? "Authentication state could not be verified. Please try again."
+          : "Please sign in again."
+      })
+    };
   }
 
-  const store = customersStore();
-  const customer = await store.get(customerId, { type: "json" });
-  if (!customer) {
-    return { statusCode: 404, body: JSON.stringify({ error: "That Traveller could no longer be found." }) };
-  }
+  const customer = auth.customer;
 
   if (event.httpMethod === "GET") {
     return {
@@ -73,47 +76,76 @@ exports.handler = async function (event) {
     if (!trimmed) {
       return { statusCode: 400, body: JSON.stringify({ error: "Traveller Name cannot be empty." }) };
     }
-    customer.name = trimmed;
   }
 
-  if (email !== undefined) {
-    const newKey = normaliseEmail(email);
-    if (!newKey) {
-      return { statusCode: 400, body: JSON.stringify({ error: "Please provide a valid email address." }) };
-    }
-    if (newKey !== customer.email) {
-      const emails = customerEmailsStore();
-      const existingId = await emails.get(newKey, { type: "text" });
-      if (existingId && existingId !== customer.id) {
-        return { statusCode: 409, body: JSON.stringify({ error: "Another Traveller already uses that email address." }) };
+  const nextEmail = email !== undefined ? normaliseEmail(email) : undefined;
+  if (email !== undefined && !nextEmail) {
+    return { statusCode: 400, body: JSON.stringify({ error: "Please provide a valid email address." }) };
+  }
+
+  if (password !== undefined && String(password).length < 8) {
+    return { statusCode: 400, body: JSON.stringify({ error: "Traveller password must be at least 8 characters." }) };
+  }
+
+  const emails = customerEmailsStore();
+  let updateResult;
+
+  try {
+    updateResult = await updateCustomerRecordWithRetry(customer.id, async (currentCustomer) => {
+      if (name !== undefined) {
+        currentCustomer.name = String(name).trim();
       }
-      await emails.delete(customer.email);
-      await emails.set(newKey, customer.id);
-      customer.email = newKey;
+
+      if (nextEmail !== undefined && nextEmail !== currentCustomer.email) {
+        const existingId = await emails.get(nextEmail, { type: "text" });
+        if (existingId && existingId !== currentCustomer.id) {
+          const conflict = new Error("Another Traveller already uses that email address.");
+          conflict.code = "EMAIL_TAKEN";
+          throw conflict;
+        }
+        currentCustomer.email = nextEmail;
+      }
+
+      if (password !== undefined) {
+        const { salt, hash } = hashPassword(password);
+        currentCustomer.passwordHash = hash;
+        currentCustomer.salt = salt;
+      }
+
+      if (notificationPrefs !== undefined && typeof notificationPrefs === "object") {
+        currentCustomer.notificationPrefs = {
+          ...currentCustomer.notificationPrefs,
+          ...notificationPrefs
+        };
+      }
+
+      return currentCustomer;
+    });
+  } catch (error) {
+    if (error.code === "EMAIL_TAKEN") {
+      return { statusCode: 409, body: JSON.stringify({ error: "Another Traveller already uses that email address." }) };
     }
-  }
-
-  if (password !== undefined) {
-    if (String(password).length < 8) {
-      return { statusCode: 400, body: JSON.stringify({ error: "Traveller password must be at least 8 characters." }) };
+    if (error.code === "CUSTOMER_WRITE_CONFLICT") {
+      return { statusCode: 503, body: JSON.stringify({ error: "Your Preferences could not be saved right now. Please try again." }) };
     }
-    const { salt, hash } = hashPassword(password);
-    customer.passwordHash = hash;
-    customer.salt = salt;
+    throw error;
   }
 
-  if (notificationPrefs !== undefined && typeof notificationPrefs === "object") {
-    customer.notificationPrefs = {
-      ...customer.notificationPrefs,
-      ...notificationPrefs
-    };
+  if (!updateResult.ok && updateResult.notFound) {
+    return { statusCode: 404, body: JSON.stringify({ error: "That Traveller could no longer be found." }) };
   }
 
-  await store.set(customer.id, JSON.stringify(customer));
+  const updatedCustomer = updateResult.customer;
+  const previousCustomer = updateResult.previous;
+
+  if (previousCustomer.email !== updatedCustomer.email) {
+    await emails.delete(previousCustomer.email);
+    await emails.set(updatedCustomer.email, updatedCustomer.id);
+  }
 
   return {
     statusCode: 200,
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ customer: publicShape(customer) })
+    body: JSON.stringify({ customer: publicShape(updatedCustomer) })
   };
 };
