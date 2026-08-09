@@ -248,8 +248,8 @@ function resolveShippingOption(subtotal, selectedShippingId) {
 
 function getCheckoutTotals(cart = getCart(), products = getAllProducts(), selectedShippingId = "") {
   const subtotal       = getCartTotal(cart, products);
-  const shippingOption = resolveShippingOption(subtotal, selectedShippingId);
-  const shippingCost   = shippingOption ? shippingOption.price : 0;
+  const shippingOption  = resolveShippingOption(subtotal, selectedShippingId);
+  const shippingCost    = shippingOption ? shippingOption.price : 0;
   return {
     subtotal,
     shippingOption,
@@ -1847,9 +1847,8 @@ function renderCheckoutPage() {
 /**
  * Posts the cart to the Netlify Function and redirects to Stripe Checkout.
  *
- * The function receives line items (name, price in decimal GBP, quantity),
- * creates a Stripe Checkout Session server-side, and returns a hosted
- * payment URL. The browser then navigates to that URL.
+ * The function receives purchase intent only, resolves pricing server-side,
+ * creates a Stripe Checkout Session, and returns a hosted payment URL.
  */
 async function initiateStripeCheckout(cart, products) {
   const button = document.querySelector("#checkout-button");
@@ -1876,24 +1875,13 @@ async function initiateStripeCheckout(cart, products) {
     return;
   }
 
-  // Build the line items array the Netlify Function expects
+  // Build the line items array the Netlify Function expects.
   const lineItems = cart
-    .map((entry) => {
-      const product = products.find((p) => p.id === entry.id);
-      if (!product) return null;
-      const price = getProductPrice(product);
-      if (!price || price <= 0) {
-        console.warn(`Stripe checkout: skipping "${product.name}" — price resolved to 0.`);
-        return null;
-      }
-      return {
-        productId: product.id,  // embedded in session metadata for webhook stock decrement
-        name:      product.name,
-        price,            // decimal GBP, e.g. 4.50 — converted to pence in the Netlify Function
-        quantity:  entry.quantity
-      };
-    })
-    .filter(Boolean);
+    .map((entry) => ({
+      productId: entry.id,
+      quantity:  entry.quantity
+    }))
+    .filter((entry) => Boolean(entry.productId));
 
   if (!lineItems.length) {
     showToast("Your Curiosity Cabinet appears to be empty.");
@@ -1907,9 +1895,7 @@ async function initiateStripeCheckout(cart, products) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         lineItems,
-        shippingMethod: totals.shippingOption.id,
-        successUrl: `${window.location.origin}/success.html`,
-        cancelUrl:  `${window.location.origin}/checkout.html`
+        shippingMethod: totals.shippingOption.id
       })
     });
 
