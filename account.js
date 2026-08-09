@@ -137,7 +137,6 @@ function initForgotPasswordForm() {
 
   const errorEl = document.getElementById("forgot-error");
   const noteEl  = document.getElementById("forgot-note");
-  const linkEl  = document.getElementById("forgot-reset-link");
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -155,13 +154,7 @@ function initForgotPasswordForm() {
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || "Something went wrong. Please try again.");
 
-      if (data.resetUrl) {
-        linkEl.href = data.resetUrl;
-        noteEl.classList.remove("hidden");
-      } else {
-        noteEl.classList.remove("hidden");
-        linkEl.parentElement.textContent = "If a Traveller is known by that email address, a note has been left for them.";
-      }
+      noteEl.classList.remove("hidden");
     } catch (error) {
       showFieldError(errorEl, error.message);
     }

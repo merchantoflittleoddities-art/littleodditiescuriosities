@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "dependencies": {
+    "resend": "^4.0.1",
     "stripe": "^14.0.0",
     "@netlify/blobs": "^7.0.0"
   }
