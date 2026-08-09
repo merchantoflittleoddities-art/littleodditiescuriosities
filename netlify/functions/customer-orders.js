@@ -14,7 +14,7 @@
 
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const { connectLambda } = require("@netlify/blobs");
-const { authenticate, customersStore, orderStatusStore } = require("./_customer-lib");
+const { authenticate, orderStatusStore } = require("./_customer-lib");
 
 const STATUS_COPY = {
   new:       "The Merchant has received your request.",
@@ -31,15 +31,19 @@ exports.handler = async function (event) {
 
   connectLambda(event);
 
-  const customerId = authenticate(event);
-  if (!customerId) {
-    return { statusCode: 401, body: JSON.stringify({ error: "Please sign in again." }) };
+  const auth = await authenticate(event);
+  if (!auth.ok) {
+    return {
+      statusCode: auth.statusCode,
+      body: JSON.stringify({
+        error: auth.statusCode === 503
+          ? "Authentication state could not be verified. Please try again."
+          : "Please sign in again."
+      })
+    };
   }
 
-  const customer = await customersStore().get(customerId, { type: "json" });
-  if (!customer) {
-    return { statusCode: 404, body: JSON.stringify({ error: "That Traveller could no longer be found." }) };
-  }
+  const customer = auth.customer;
 
   if (!process.env.STRIPE_SECRET_KEY) {
     return { statusCode: 500, body: JSON.stringify({ error: "Stripe is not configured." }) };

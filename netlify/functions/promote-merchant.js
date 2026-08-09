@@ -18,7 +18,7 @@
 const crypto = require("crypto");
 const { connectLambda } = require("@netlify/blobs");
 const {
-  customersStore,
+  updateCustomerRecordWithRetry,
   customerEmailsStore,
   normaliseEmail
 } = require("./_customer-lib");
@@ -64,15 +64,28 @@ exports.handler = async function (event) {
   }
 
   const customerId = await customerEmailsStore().get(key, { type: "text" });
-  const store = customersStore();
-  const customer = customerId ? await store.get(customerId, { type: "json" }) : null;
-
-  if (!customer) {
+  if (!customerId) {
     return { statusCode: 404, body: JSON.stringify({ error: "No Traveller account is known by that email address." }) };
   }
 
-  customer.role = "merchant";
-  await store.set(customer.id, JSON.stringify(customer));
+  let updateResult;
+  try {
+    updateResult = await updateCustomerRecordWithRetry(customerId, (customer) => {
+      customer.role = "merchant";
+      return customer;
+    });
+  } catch (error) {
+    if (error.code === "CUSTOMER_WRITE_CONFLICT") {
+      return { statusCode: 503, body: JSON.stringify({ error: "Merchant promotion could not be completed right now. Please try again." }) };
+    }
+    throw error;
+  }
+
+  if (!updateResult.ok && updateResult.notFound) {
+    return { statusCode: 404, body: JSON.stringify({ error: "No Traveller account is known by that email address." }) };
+  }
+
+  const customer = updateResult.customer;
 
   return {
     statusCode: 200,

@@ -13,7 +13,7 @@ const { connectLambda } = require("@netlify/blobs");
 const {
   hashPassword,
   createToken,
-  customersStore,
+  updateCustomerRecordWithRetry,
   resetTokensStore
 } = require("./_customer-lib");
 
@@ -45,16 +45,27 @@ exports.handler = async function (event) {
     return { statusCode: 400, body: JSON.stringify({ error: "That reset link has expired or is no longer valid. Please request a new one." }) };
   }
 
-  const customersDb = customersStore();
-  const customer = await customersDb.get(record.customerId, { type: "json" });
-  if (!customer) {
+  let updateResult;
+  try {
+    updateResult = await updateCustomerRecordWithRetry(record.customerId, (customer) => {
+      const { salt, hash } = hashPassword(password);
+      customer.passwordHash = hash;
+      customer.salt = salt;
+      return customer;
+    });
+  } catch (error) {
+    if (error.code === "CUSTOMER_WRITE_CONFLICT") {
+      return { statusCode: 503, body: JSON.stringify({ error: "Your password could not be reset right now. Please try again." }) };
+    }
+    throw error;
+  }
+
+  if (!updateResult.ok && updateResult.notFound) {
     return { statusCode: 404, body: JSON.stringify({ error: "That Traveller could no longer be found." }) };
   }
 
-  const { salt, hash } = hashPassword(password);
-  customer.passwordHash = hash;
-  customer.salt = salt;
-  await customersDb.set(customer.id, JSON.stringify(customer));
+  const customer = updateResult.customer;
+
   await resetStore.delete(token);
 
   const sessionToken = createToken(customer.id);

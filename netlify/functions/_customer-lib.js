@@ -75,15 +75,122 @@ function verifyToken(token) {
   return customerId;
 }
 
+function getTokenIssuedAtMs(token) {
+  const parts = String(token || "").split(".");
+  if (parts.length !== 3) return null;
+  const issuedAtMs = parseInt(parts[1], 10);
+  return Number.isFinite(issuedAtMs) ? issuedAtMs : null;
+}
+
+function cloneCustomerRecord(customer) {
+  return JSON.parse(JSON.stringify(customer));
+}
+
+function isConditionalWriteConflict(error) {
+  return error?.status === 412 || error?.statusCode === 412;
+}
+
+/**
+ * Safely updates an existing customer record with optimistic concurrency.
+ * Reads the latest value + ETag, applies updater, and writes with onlyIfMatch.
+ */
+async function updateCustomerRecordWithRetry(customerId, updater, options = {}) {
+  const maxAttempts = Number.isInteger(options.maxAttempts) ? options.maxAttempts : 5;
+  const store = customersStore();
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const blob = await store.getWithMetadata(customerId, {
+      type: "json",
+      consistency: "strong"
+    });
+
+    const current = blob?.data || null;
+    if (!current) {
+      return { ok: false, notFound: true, attempts: attempt };
+    }
+
+    const draft = cloneCustomerRecord(current);
+    const next = await updater(draft, current, attempt);
+
+    if (!next || typeof next !== "object" || Array.isArray(next)) {
+      throw new Error("customer-update: updater must return a customer object.");
+    }
+
+    const etag = blob?.etag || null;
+    const setOptions = etag ? { onlyIfMatch: etag } : { onlyIfNew: true };
+
+    try {
+      const write = await store.setJSON(customerId, next, setOptions);
+      return {
+        ok: true,
+        customer: next,
+        previous: current,
+        attempts: attempt,
+        etag: write?.etag || null
+      };
+    } catch (error) {
+      if (isConditionalWriteConflict(error) && attempt < maxAttempts) {
+        continue;
+      }
+      if (isConditionalWriteConflict(error) && attempt >= maxAttempts) {
+        const conflictError = new Error("customer-update: conditional write conflicts exceeded retry budget.");
+        conflictError.code = "CUSTOMER_WRITE_CONFLICT";
+        throw conflictError;
+      }
+      throw error;
+    }
+  }
+
+  const conflictError = new Error("customer-update: retry loop exited unexpectedly.");
+  conflictError.code = "CUSTOMER_WRITE_CONFLICT";
+  throw conflictError;
+}
+
 /** Reads the Bearer token from a Netlify Function event's headers */
 function getBearerToken(event) {
   const header = event.headers["authorization"] || event.headers["Authorization"] || "";
   return header.startsWith("Bearer ") ? header.slice(7) : "";
 }
 
-/** Verifies the request's Bearer token and returns the customerId, or null */
-function authenticate(event) {
-  return verifyToken(getBearerToken(event));
+/**
+ * Verifies the request's Bearer token and revocation state.
+ *
+ * Returns:
+ *   { ok: true, customerId, customer, tokenIssuedAtMs }
+ *   { ok: false, statusCode: 401 } for invalid/expired/revoked tokens
+ *   { ok: false, statusCode: 503 } when auth state cannot be verified
+ */
+async function authenticate(event) {
+  const token = getBearerToken(event);
+  const customerId = verifyToken(token);
+
+  if (!customerId) {
+    return { ok: false, statusCode: 401 };
+  }
+
+  const tokenIssuedAtMs = getTokenIssuedAtMs(token);
+  if (!Number.isFinite(tokenIssuedAtMs)) {
+    return { ok: false, statusCode: 401 };
+  }
+
+  let customer;
+  try {
+    customer = await customersStore().get(customerId, { type: "json" });
+  } catch (error) {
+    console.error("customer-auth: failed to load customer for authentication:", error.message);
+    return { ok: false, statusCode: 503 };
+  }
+
+  if (!customer) {
+    return { ok: false, statusCode: 401 };
+  }
+
+  const cutoff = Number(customer.tokenRevokedAfterMs);
+  if (Number.isFinite(cutoff) && cutoff > 0 && tokenIssuedAtMs <= cutoff) {
+    return { ok: false, statusCode: 401 };
+  }
+
+  return { ok: true, customerId, customer, tokenIssuedAtMs };
 }
 
 /* ── Blobs stores ─────────────────────────────────────────── */
@@ -108,6 +215,7 @@ module.exports = {
   verifyToken,
   getBearerToken,
   authenticate,
+  updateCustomerRecordWithRetry,
   customersStore,
   customerEmailsStore,
   addressesStore,
