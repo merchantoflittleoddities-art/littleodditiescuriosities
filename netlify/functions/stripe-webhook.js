@@ -23,6 +23,21 @@
 const stripe      = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const { connectLambda, getStore } = require("@netlify/blobs");
 
+const INVENTORY_KEY = "all";
+const MAX_CONFLICT_RETRIES = 5;
+const BASE_RETRY_DELAY_MS = 25;
+const JITTER_RETRY_DELAY_MS = 30;
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function nextRetryDelay(attempt) {
+  const exponential = BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1);
+  const jitter = Math.floor(Math.random() * JITTER_RETRY_DELAY_MS);
+  return exponential + jitter;
+}
+
 exports.handler = async function (event) {
 
   /* Webhooks must be POST */
@@ -78,31 +93,100 @@ exports.handler = async function (event) {
        Blobs client so it can pick up the site's blob credentials. */
     connectLambda(event);
 
-    const store     = getStore("inventory");
-    const raw       = await store.get("all", { type: "text" });
-    const inventory = raw ? JSON.parse(raw) : {};
+    const store = getStore("inventory");
+    const paymentRef = {
+      stripeEventId: stripeEvent.id,
+      stripeEventType: stripeEvent.type,
+      checkoutSessionId: session.id || null,
+      paymentIntentId: session.payment_intent || null,
+      customerEmail: session.customer_details?.email || session.customer_email || null,
+      orderItems
+    };
 
-    orderItems.forEach(({ id, qty }) => {
-      if (!id || !qty) return;
+    for (let attempt = 1; attempt <= MAX_CONFLICT_RETRIES; attempt += 1) {
+      const blob = await store.getWithMetadata(INVENTORY_KEY, {
+        type: "text",
+        consistency: "strong"
+      });
 
-      /* If this product isn't being tracked yet, do nothing */
-      const entry = inventory[id];
-      if (!entry || entry.stock === null) return;
+      const etag = blob?.etag || null;
+      const rawInventory = blob?.data;
+      const inventory = rawInventory ? JSON.parse(rawInventory) : {};
 
-      /* Decrement, but never below zero */
-      entry.stock       = Math.max(0, entry.stock - qty);
-      entry.lastUpdated = Date.now();
+      if (typeof inventory !== "object" || inventory === null || Array.isArray(inventory)) {
+        throw new Error("Inventory blob is malformed.");
+      }
 
-      console.log(`stripe-webhook: decremented ${id} by ${qty} → stock now ${entry.stock}`);
+      const shortages = [];
+      for (const { id, qty } of orderItems) {
+        const item = inventory[id];
+        if (!item || item.stock === null) continue;
+
+        const stock = Number(item.stock);
+        if (!Number.isFinite(stock) || item.available === false || stock < qty) {
+          shortages.push({
+            productId: id,
+            requestedQty: qty,
+            availableStock: Number.isFinite(stock) ? stock : null,
+            availableFlag: item.available
+          });
+        }
+      }
+
+      if (shortages.length) {
+        console.error("stripe-webhook: manual intervention required - insufficient stock after payment", {
+          ...paymentRef,
+          shortages
+        });
+        return {
+          statusCode: 200,
+          body: "Insufficient stock after payment; manual intervention required."
+        };
+      }
+
+      const updatedInventory = JSON.parse(JSON.stringify(inventory));
+      const now = Date.now();
+
+      for (const { id, qty } of orderItems) {
+        const item = updatedInventory[id];
+        if (!item || item.stock === null) continue;
+
+        item.stock = Number(item.stock) - qty;
+        item.lastUpdated = now;
+      }
+
+      const setOptions = etag ? { onlyIfMatch: etag } : { onlyIfNew: true };
+      const write = await store.set(INVENTORY_KEY, JSON.stringify(updatedInventory), setOptions);
+
+      if (write?.modified) {
+        console.log("stripe-webhook: stock updated after payment", {
+          ...paymentRef,
+          conflictRetries: attempt - 1,
+          newInventoryEtag: write.etag || null
+        });
+        return { statusCode: 200, body: "Stock updated." };
+      }
+
+      if (attempt < MAX_CONFLICT_RETRIES) {
+        await delay(nextRetryDelay(attempt));
+      }
+    }
+
+    console.error("stripe-webhook: inventory update conflicted too many times; retry required", {
+      stripeEventId: stripeEvent.id,
+      checkoutSessionId: session.id || null,
+      paymentIntentId: session.payment_intent || null,
+      orderItems,
+      maxRetries: MAX_CONFLICT_RETRIES
     });
 
-    await store.set("all", JSON.stringify(inventory));
-
-    return { statusCode: 200, body: "Stock updated." };
+    return {
+      statusCode: 503,
+      body: "Inventory update conflict; please retry webhook delivery."
+    };
 
   } catch (error) {
     console.error("stripe-webhook: failed to update inventory:", error.message);
-    /* Return 200 so Stripe does not retry — log the error for investigation */
-    return { statusCode: 200, body: "Stock update failed — check function logs." };
+    return { statusCode: 500, body: "Inventory update failed. Please retry webhook delivery." };
   }
 };
