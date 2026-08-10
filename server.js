@@ -22,33 +22,7 @@ const MIME_TYPES = {
 
 const server = http.createServer((req, res) => {
 
-  if (req.url === "/db-test") {
-    pool.query("SELECT NOW() AS current_time")
-      .then((result) => {
-        res.writeHead(200, {
-          "Content-Type": "application/json"
-        });
-
-        res.end(JSON.stringify({
-          ok: true,
-          databaseTime: result.rows[0].current_time
-        }));
-      })
-      .catch((error) => {
-        console.error("Database test failed:", error);
-
-        res.writeHead(500, {
-          "Content-Type": "application/json"
-        });
-
-        res.end(JSON.stringify({
-          ok: false,
-          error: error.message
-        }));
-      });
-
-    return;
-  }
+ 
 
   let requestPath = decodeURIComponent(req.url.split("?")[0]);
   if (requestPath === "/") {
