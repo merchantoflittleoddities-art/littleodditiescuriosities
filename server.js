@@ -302,7 +302,11 @@ function getDashboardPassword() {
   return getRuntimeEnvValue([
     "DASHBOARD_PASSWORD",
     "MERCHANT_DASHBOARD_PASSWORD",
-    "G7CLOUD_DASHBOARD_PASSWORD"
+    "G7CLOUD_DASHBOARD_PASSWORD",
+    "DASHBOARD_KEY",
+    "MERCHANT_KEY",
+    "G7CLOUD_MERCHANT_KEY",
+    "MERCHANT_SETUP_KEY"
   ]);
 }
 
@@ -310,7 +314,14 @@ function getDashboardSecret() {
   return getRuntimeEnvValue([
     "DASHBOARD_SECRET",
     "MERCHANT_DASHBOARD_SECRET",
-    "G7CLOUD_DASHBOARD_SECRET"
+    "G7CLOUD_DASHBOARD_SECRET",
+    "DASHBOARD_SIGNING_SECRET",
+    "MERCHANT_DASHBOARD_SIGNING_SECRET",
+    "G7CLOUD_DASHBOARD_SIGNING_SECRET",
+    "DASHBOARD_PASSWORD",
+    "MERCHANT_DASHBOARD_PASSWORD",
+    "G7CLOUD_DASHBOARD_PASSWORD",
+    "MERCHANT_SETUP_KEY"
   ]);
 }
 
@@ -784,7 +795,7 @@ async function handleDashboardLogin(req, res) {
   if (!correctPassword || !secret) {
     console.error("dashboard-login: dashboard credentials are not configured in the runtime environment.");
     sendJson(res, 500, {
-      error: "Dashboard is not yet configured. Please set DASHBOARD_PASSWORD and DASHBOARD_SECRET in the runtime environment."
+      error: "Dashboard is not yet configured. Please set dashboard credentials in the runtime environment."
     });
     return;
   }
@@ -2314,7 +2325,7 @@ const server = http.createServer((req, res) => {
       console.error("dashboard-login: unexpected failure:", error);
       if (!res.headersSent) {
         sendJson(res, 500, {
-          error: "Dashboard is not yet configured. Please set DASHBOARD_PASSWORD and DASHBOARD_SECRET in the runtime environment."
+          error: "Dashboard is not yet configured. Please set dashboard credentials in the runtime environment."
         });
       } else {
         res.end();
