@@ -13,8 +13,15 @@
    Token is sent as:  Authorization: Bearer <token>
    ============================================================= */
 
-const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const crypto = require("crypto");
+let stripeClient = null;
+
+function getStripeClient() {
+  const key = String(process.env.STRIPE_SECRET_KEY || "").trim();
+  if (!key) return null;
+  if (!stripeClient) stripeClient = require("stripe")(key);
+  return stripeClient;
+}
 
 /* ── Token verification ───────────────────────────────────── */
 
@@ -75,10 +82,11 @@ exports.handler = async function (event) {
   }
 
   /* Guard: Stripe must be configured */
-  if (!process.env.STRIPE_SECRET_KEY) {
+  const stripe = getStripeClient();
+  if (!stripe) {
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: "Stripe is not configured." })
+      body: JSON.stringify({ error: "Stripe is not configured. Missing STRIPE_SECRET_KEY." })
     };
   }
 

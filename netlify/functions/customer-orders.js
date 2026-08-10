@@ -12,9 +12,16 @@
    Requires: Authorization: Bearer <token>
    ============================================================= */
 
-const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const { connectLambda } = require("@netlify/blobs");
 const { authenticate, orderStatusStore } = require("./_customer-lib");
+let stripeClient = null;
+
+function getStripeClient() {
+  const key = String(process.env.STRIPE_SECRET_KEY || "").trim();
+  if (!key) return null;
+  if (!stripeClient) stripeClient = require("stripe")(key);
+  return stripeClient;
+}
 
 const STATUS_COPY = {
   new:       "The Merchant has received your request.",
@@ -45,8 +52,9 @@ exports.handler = async function (event) {
 
   const customer = auth.customer;
 
-  if (!process.env.STRIPE_SECRET_KEY) {
-    return { statusCode: 500, body: JSON.stringify({ error: "Stripe is not configured." }) };
+  const stripe = getStripeClient();
+  if (!stripe) {
+    return { statusCode: 500, body: JSON.stringify({ error: "Stripe is not configured. Missing STRIPE_SECRET_KEY." }) };
   }
 
   try {

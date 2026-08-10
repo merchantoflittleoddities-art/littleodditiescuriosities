@@ -20,8 +20,15 @@
    Each entry is: { id: <productId>, qty: <quantity> }
    ============================================================= */
 
-const stripe      = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const { connectLambda, getStore } = require("@netlify/blobs");
+let stripeClient = null;
+
+function getStripeClient() {
+  const key = String(process.env.STRIPE_SECRET_KEY || "").trim();
+  if (!key) return null;
+  if (!stripeClient) stripeClient = require("stripe")(key);
+  return stripeClient;
+}
 
 const INVENTORY_KEY = "all";
 const MAX_CONFLICT_RETRIES = 5;
@@ -43,6 +50,12 @@ exports.handler = async function (event) {
   /* Webhooks must be POST */
   if (event.httpMethod !== "POST") {
     return { statusCode: 405, body: "Method not allowed." };
+  }
+
+  const stripe = getStripeClient();
+  if (!stripe) {
+    console.error("stripe-webhook: STRIPE_SECRET_KEY not set. Skipping.");
+    return { statusCode: 200, body: "Stripe secret not configured." };
   }
 
   const signature = event.headers["stripe-signature"];

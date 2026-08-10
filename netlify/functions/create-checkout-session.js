@@ -22,9 +22,16 @@
    so all prices are resolved and converted server-side.
    ============================================================= */
 
-const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const fs = require("fs");
 const path = require("path");
+let stripeClient = null;
+
+function getStripeClient() {
+  const key = String(process.env.STRIPE_SECRET_KEY || "").trim();
+  if (!key) return null;
+  if (!stripeClient) stripeClient = require("stripe")(key);
+  return stripeClient;
+}
 
 const FREE_SHIPPING_THRESHOLD_PENCE = 3000;
 const MAX_QUANTITY_PER_ITEM = 99;
@@ -292,6 +299,14 @@ exports.handler = async function (event) {
     };
   }
 
+  const stripe = getStripeClient();
+  if (!stripe) {
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: "Stripe is not configured. Missing STRIPE_SECRET_KEY." })
+    };
+  }
+
   try {
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
@@ -351,6 +366,20 @@ exports.handler = async function (event) {
 
   } catch (error) {
     console.error("Stripe error:", error.message);
+    if (error && (error.type === "StripeAuthenticationError" || /api key/i.test(String(error.message || "")))) {
+      return {
+        statusCode: 500,
+        body: JSON.stringify({ error: "Stripe authentication failed. Check STRIPE_SECRET_KEY." })
+      };
+    }
+
+    if (error && error.type === "StripeInvalidRequestError") {
+      return {
+        statusCode: 500,
+        body: JSON.stringify({ error: "Stripe rejected the checkout request. Please verify payment configuration." })
+      };
+    }
+
     return {
       statusCode: 500,
       body: JSON.stringify({ error: "Payment session could not be created. Please try again." })
