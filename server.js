@@ -342,6 +342,50 @@ async function handleCustomerWishlist(req, res) {
   sendPrivateApiJson(res, 200, { productIds });
 }
 
+async function handleCustomerLogout(req, res) {
+  if (req.method !== "POST") {
+    sendPrivateApiJson(res, 405, { error: "Method not allowed." });
+    return;
+  }
+
+  const auth = await authenticateProfileRequest(req);
+  if (!auth.ok) {
+    if (auth.statusCode === 503) {
+      sendPrivateApiJson(res, 503, {
+        error: "Authentication state could not be verified. Please try again."
+      });
+      return;
+    }
+
+    sendPrivateApiJson(res, 401, { error: "Please sign in again." });
+    return;
+  }
+
+  const now = Date.now();
+
+  try {
+    const update = await pool.query(
+      `UPDATE customers
+      SET token_revoked_after_ms = GREATEST(COALESCE(token_revoked_after_ms, 0), $2)
+      WHERE id = $1
+      RETURNING id`,
+      [auth.customerId, now]
+    );
+
+    if (!update.rows[0]) {
+      sendPrivateApiJson(res, 401, { error: "Please sign in again." });
+      return;
+    }
+
+    sendPrivateApiJson(res, 200, { ok: true });
+  } catch (error) {
+    console.error("customer-logout: failed to persist token revocation:", error);
+    sendPrivateApiJson(res, 503, {
+      error: "Could not persist logout state. Please try again."
+    });
+  }
+}
+
 async function handleCustomerForgotPassword(req, res) {
   if (req.method !== "POST") {
     sendJson(res, 405, { error: "Method not allowed." });
@@ -717,6 +761,20 @@ const server = http.createServer((req, res) => {
       console.error("customer-wishlist: unexpected failure:", error);
       if (!res.headersSent) {
         sendPrivateApiJson(res, 500, { error: "Something went wrong. Please try again." });
+      } else {
+        res.end();
+      }
+    });
+    return;
+  }
+
+  if (requestPath === "/.netlify/functions/customer-logout") {
+    handleCustomerLogout(req, res).catch((error) => {
+      console.error("customer-logout: unexpected failure:", error);
+      if (!res.headersSent) {
+        sendPrivateApiJson(res, 503, {
+          error: "Could not persist logout state. Please try again."
+        });
       } else {
         res.end();
       }
