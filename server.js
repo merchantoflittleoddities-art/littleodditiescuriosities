@@ -29,11 +29,23 @@ const MIME_TYPES = {
   ".ico": "image/x-icon"
 };
 
-function sendJson(res, statusCode, payload) {
+function sendJson(res, statusCode, payload, extraHeaders = {}) {
   res.writeHead(statusCode, {
-    "Content-Type": "application/json; charset=utf-8"
+    "Content-Type": "application/json; charset=utf-8",
+    ...extraHeaders
   });
   res.end(JSON.stringify(payload));
+}
+
+const PRIVATE_API_NO_STORE_HEADERS = {
+  "Cache-Control": "private, no-store",
+  "Pragma": "no-cache",
+  "Expires": "0",
+  "Vary": "Authorization"
+};
+
+function sendPrivateApiJson(res, statusCode, payload) {
+  sendJson(res, statusCode, payload, PRIVATE_API_NO_STORE_HEADERS);
 }
 
 async function readRequestBody(req) {
@@ -126,25 +138,25 @@ async function loadCustomerWishlistProductIds(customerId) {
 
 async function handleCustomerProfile(req, res) {
   if (req.method !== "GET" && req.method !== "POST") {
-    sendJson(res, 405, { error: "Method not allowed." });
+    sendPrivateApiJson(res, 405, { error: "Method not allowed." });
     return;
   }
 
   const auth = await authenticateProfileRequest(req);
   if (!auth.ok) {
     if (auth.statusCode === 503) {
-      sendJson(res, 503, {
+      sendPrivateApiJson(res, 503, {
         error: "Authentication state could not be verified. Please try again."
       });
       return;
     }
 
-    sendJson(res, 401, { error: "Please sign in again." });
+    sendPrivateApiJson(res, 401, { error: "Please sign in again." });
     return;
   }
 
   if (req.method === "GET") {
-    sendJson(res, 200, { customer: toProfileCustomer(auth.customer) });
+    sendPrivateApiJson(res, 200, { customer: toProfileCustomer(auth.customer) });
     return;
   }
 
@@ -152,7 +164,7 @@ async function handleCustomerProfile(req, res) {
   try {
     bodyText = await readRequestBody(req);
   } catch {
-    sendJson(res, 400, { error: "Invalid request body." });
+    sendPrivateApiJson(res, 400, { error: "Invalid request body." });
     return;
   }
 
@@ -160,7 +172,7 @@ async function handleCustomerProfile(req, res) {
   try {
     body = JSON.parse(bodyText);
   } catch {
-    sendJson(res, 400, { error: "Invalid request body." });
+    sendPrivateApiJson(res, 400, { error: "Invalid request body." });
     return;
   }
 
@@ -170,7 +182,7 @@ async function handleCustomerProfile(req, res) {
   if (name !== undefined) {
     const trimmed = String(name).trim();
     if (!trimmed) {
-      sendJson(res, 400, { error: "Traveller Name cannot be empty." });
+      sendPrivateApiJson(res, 400, { error: "Traveller Name cannot be empty." });
       return;
     }
     nextName = trimmed;
@@ -180,7 +192,7 @@ async function handleCustomerProfile(req, res) {
   if (email !== undefined) {
     nextEmail = normaliseEmail(email);
     if (!nextEmail) {
-      sendJson(res, 400, { error: "Please provide a valid email address." });
+      sendPrivateApiJson(res, 400, { error: "Please provide a valid email address." });
       return;
     }
   }
@@ -189,7 +201,7 @@ async function handleCustomerProfile(req, res) {
   let nextSalt = null;
   if (password !== undefined) {
     if (String(password).length < 8) {
-      sendJson(res, 400, { error: "Traveller password must be at least 8 characters." });
+      sendPrivateApiJson(res, 400, { error: "Traveller password must be at least 8 characters." });
       return;
     }
 
@@ -233,28 +245,28 @@ async function handleCustomerProfile(req, res) {
 
     const updatedCustomer = update.rows[0] || null;
     if (!updatedCustomer) {
-      sendJson(res, 401, { error: "Please sign in again." });
+      sendPrivateApiJson(res, 401, { error: "Please sign in again." });
       return;
     }
 
-    sendJson(res, 200, { customer: toProfileCustomer(updatedCustomer) });
+    sendPrivateApiJson(res, 200, { customer: toProfileCustomer(updatedCustomer) });
   } catch (error) {
     if (isDuplicateEmailError(error)) {
-      sendJson(res, 409, {
+      sendPrivateApiJson(res, 409, {
         error: "Another Traveller already uses that email address."
       });
       return;
     }
 
     if (isProfileWriteStateError(error)) {
-      sendJson(res, 503, {
+      sendPrivateApiJson(res, 503, {
         error: "Your Preferences could not be saved right now. Please try again."
       });
       return;
     }
 
     console.error("customer-profile: failed to update customer:", error);
-    sendJson(res, 500, {
+    sendPrivateApiJson(res, 500, {
       error: "Something went wrong. Please try again."
     });
   }
@@ -262,26 +274,26 @@ async function handleCustomerProfile(req, res) {
 
 async function handleCustomerWishlist(req, res) {
   if (req.method !== "GET" && req.method !== "POST" && req.method !== "DELETE") {
-    sendJson(res, 405, { error: "Method not allowed." });
+    sendPrivateApiJson(res, 405, { error: "Method not allowed." });
     return;
   }
 
   const auth = await authenticateProfileRequest(req);
   if (!auth.ok) {
     if (auth.statusCode === 503) {
-      sendJson(res, 503, {
+      sendPrivateApiJson(res, 503, {
         error: "Authentication state could not be verified. Please try again."
       });
       return;
     }
 
-    sendJson(res, 401, { error: "Please sign in again." });
+    sendPrivateApiJson(res, 401, { error: "Please sign in again." });
     return;
   }
 
   if (req.method === "GET") {
     const productIds = await loadCustomerWishlistProductIds(auth.customerId);
-    sendJson(res, 200, { productIds });
+    sendPrivateApiJson(res, 200, { productIds });
     return;
   }
 
@@ -289,7 +301,7 @@ async function handleCustomerWishlist(req, res) {
   try {
     bodyText = await readRequestBody(req);
   } catch {
-    sendJson(res, 400, { error: "Invalid request body." });
+    sendPrivateApiJson(res, 400, { error: "Invalid request body." });
     return;
   }
 
@@ -297,13 +309,13 @@ async function handleCustomerWishlist(req, res) {
   try {
     body = JSON.parse(bodyText);
   } catch {
-    sendJson(res, 400, { error: "Invalid request body." });
+    sendPrivateApiJson(res, 400, { error: "Invalid request body." });
     return;
   }
 
   const { productId } = body;
   if (!productId) {
-    sendJson(res, 400, { error: "A productId is required." });
+    sendPrivateApiJson(res, 400, { error: "A productId is required." });
     return;
   }
 
@@ -323,7 +335,7 @@ async function handleCustomerWishlist(req, res) {
   }
 
   const productIds = await loadCustomerWishlistProductIds(auth.customerId);
-  sendJson(res, 200, { productIds });
+  sendPrivateApiJson(res, 200, { productIds });
 }
 
 async function handleCustomerRegister(req, res) {
@@ -521,7 +533,7 @@ const server = http.createServer((req, res) => {
     handleCustomerProfile(req, res).catch((error) => {
       console.error("customer-profile: unexpected failure:", error);
       if (!res.headersSent) {
-        sendJson(res, 500, { error: "Something went wrong. Please try again." });
+        sendPrivateApiJson(res, 500, { error: "Something went wrong. Please try again." });
       } else {
         res.end();
       }
@@ -533,7 +545,7 @@ const server = http.createServer((req, res) => {
     handleCustomerWishlist(req, res).catch((error) => {
       console.error("customer-wishlist: unexpected failure:", error);
       if (!res.headersSent) {
-        sendJson(res, 500, { error: "Something went wrong. Please try again." });
+        sendPrivateApiJson(res, 500, { error: "Something went wrong. Please try again." });
       } else {
         res.end();
       }
