@@ -67,6 +67,10 @@ function isProfileWriteStateError(error) {
   return error?.code === "40001" || error?.code === "40P01";
 }
 
+const RESET_TOKEN_LIFETIME_MS = 60 * 60 * 1000;
+const FORGOT_PASSWORD_INTERNAL_ERROR = "Something went wrong. Please try again.";
+const RESET_PASSWORD_INTERNAL_ERROR = "Reset failed.";
+
 function getTokenIssuedAtMs(token) {
   const parts = String(token || "").split(".");
   if (parts.length !== 3) return null;
@@ -338,6 +342,173 @@ async function handleCustomerWishlist(req, res) {
   sendPrivateApiJson(res, 200, { productIds });
 }
 
+async function handleCustomerForgotPassword(req, res) {
+  if (req.method !== "POST") {
+    sendJson(res, 405, { error: "Method not allowed." });
+    return;
+  }
+
+  let bodyText;
+  try {
+    bodyText = await readRequestBody(req);
+  } catch {
+    sendJson(res, 400, { error: "Invalid request body." });
+    return;
+  }
+
+  let email;
+  try {
+    ({ email } = JSON.parse(bodyText));
+  } catch {
+    sendJson(res, 400, { error: "Invalid request body." });
+    return;
+  }
+
+  const key = normaliseEmail(email);
+  if (!key) {
+    sendJson(res, 400, { error: "An email address is required." });
+    return;
+  }
+
+  const customerResult = await pool.query(
+    `SELECT id
+    FROM customers
+    WHERE email = $1
+    LIMIT 1`,
+    [key]
+  );
+
+  const customer = customerResult.rows[0] || null;
+  if (!customer) {
+    sendJson(res, 200, {});
+    return;
+  }
+
+  const resetToken = crypto.randomBytes(32).toString("hex");
+  await pool.query(
+    `INSERT INTO customer_reset_tokens (token, customer_id, expires_at)
+    VALUES ($1, $2, $3)`,
+    [
+      resetToken,
+      customer.id,
+      new Date(Date.now() + RESET_TOKEN_LIFETIME_MS).toISOString()
+    ]
+  );
+
+  const siteUrl = process.env.URL || "";
+  const resetUrl = `${siteUrl}/reset-password.html?token=${resetToken}`;
+
+  sendJson(res, 200, { resetUrl });
+}
+
+async function handleCustomerResetPassword(req, res) {
+  if (req.method !== "POST") {
+    sendJson(res, 405, { error: "Method not allowed." });
+    return;
+  }
+
+  let bodyText;
+  try {
+    bodyText = await readRequestBody(req);
+  } catch {
+    sendJson(res, 400, { error: "Invalid request body." });
+    return;
+  }
+
+  let resetToken;
+  let password;
+  try {
+    ({ token: resetToken, password } = JSON.parse(bodyText));
+  } catch {
+    sendJson(res, 400, { error: "Invalid request body." });
+    return;
+  }
+
+  if (!resetToken || !password) {
+    sendJson(res, 400, { error: "A reset token and new Traveller password are required." });
+    return;
+  }
+
+  if (String(password).length < 8) {
+    sendJson(res, 400, { error: "Traveller password must be at least 8 characters." });
+    return;
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const tokenResult = await client.query(
+      `SELECT customer_id, expires_at
+      FROM customer_reset_tokens
+      WHERE token = $1
+      FOR UPDATE`,
+      [resetToken]
+    );
+
+    const tokenRecord = tokenResult.rows[0] || null;
+    if (!tokenRecord || Date.now() > new Date(tokenRecord.expires_at).getTime()) {
+      await client.query("ROLLBACK");
+      sendJson(res, 400, {
+        error: "That reset link has expired or is no longer valid. Please request a new one."
+      });
+      return;
+    }
+
+    const { salt, hash } = hashPassword(password);
+    const customerUpdate = await client.query(
+      `UPDATE customers
+      SET password_hash = $2,
+          salt = $3
+      WHERE id = $1
+      RETURNING id, name, email`,
+      [tokenRecord.customer_id, hash, salt]
+    );
+
+    const customer = customerUpdate.rows[0] || null;
+    if (!customer) {
+      await client.query("ROLLBACK");
+      sendJson(res, 404, { error: "That Traveller could no longer be found." });
+      return;
+    }
+
+    await client.query(
+      `DELETE FROM customer_reset_tokens
+      WHERE token = $1`,
+      [resetToken]
+    );
+
+    await client.query("COMMIT");
+
+    const sessionToken = createToken(customer.id);
+    sendJson(res, 200, {
+      token: sessionToken,
+      customer: {
+        id: customer.id,
+        name: customer.name,
+        email: customer.email
+      }
+    });
+  } catch (error) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // Ignore rollback errors so the original database failure is reported.
+    }
+
+    if (isProfileWriteStateError(error)) {
+      sendJson(res, 503, {
+        error: "Your password could not be reset right now. Please try again."
+      });
+      return;
+    }
+
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 async function handleCustomerRegister(req, res) {
   if (req.method !== "POST") {
     sendJson(res, 405, { error: "Method not allowed." });
@@ -546,6 +717,30 @@ const server = http.createServer((req, res) => {
       console.error("customer-wishlist: unexpected failure:", error);
       if (!res.headersSent) {
         sendPrivateApiJson(res, 500, { error: "Something went wrong. Please try again." });
+      } else {
+        res.end();
+      }
+    });
+    return;
+  }
+
+  if (requestPath === "/.netlify/functions/customer-forgot-password") {
+    handleCustomerForgotPassword(req, res).catch((error) => {
+      console.error("customer-forgot-password: unexpected failure:", error);
+      if (!res.headersSent) {
+        sendJson(res, 500, { error: FORGOT_PASSWORD_INTERNAL_ERROR });
+      } else {
+        res.end();
+      }
+    });
+    return;
+  }
+
+  if (requestPath === "/.netlify/functions/customer-reset-password") {
+    handleCustomerResetPassword(req, res).catch((error) => {
+      console.error("customer-reset-password: unexpected failure:", error);
+      if (!res.headersSent) {
+        sendJson(res, 500, { error: RESET_PASSWORD_INTERNAL_ERROR });
       } else {
         res.end();
       }
