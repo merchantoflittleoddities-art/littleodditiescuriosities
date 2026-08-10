@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const pool = require("./db");
 const crypto = require("crypto");
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const {
   hashPassword,
   verifyPassword,
@@ -38,10 +39,12 @@ function sendJson(res, statusCode, payload, extraHeaders = {}) {
 }
 
 const PRIVATE_API_NO_STORE_HEADERS = {
-  "Cache-Control": "private, no-store",
+  "Cache-Control": "private, no-store, no-cache, max-age=0, must-revalidate, proxy-revalidate, s-maxage=0",
+  "CDN-Cache-Control": "no-store",
+  "Surrogate-Control": "no-store",
   "Pragma": "no-cache",
   "Expires": "0",
-  "Vary": "Authorization"
+  "Vary": "Authorization, Cookie"
 };
 
 function sendPrivateApiJson(res, statusCode, payload) {
@@ -70,6 +73,229 @@ function isProfileWriteStateError(error) {
 const RESET_TOKEN_LIFETIME_MS = 60 * 60 * 1000;
 const FORGOT_PASSWORD_INTERNAL_ERROR = "Something went wrong. Please try again.";
 const RESET_PASSWORD_INTERNAL_ERROR = "Reset failed.";
+
+const DASHBOARD_TOKEN_LIFETIME_MS = 8 * 60 * 60 * 1000;
+const ORDER_STATUS_VALUES = ["new", "preparing", "packed", "posted", "completed"];
+const ORDER_STATUS_COPY = {
+  new: "The Merchant has received your request.",
+  preparing: "The Merchant is busy crafting your oddities.",
+  packed: "Relics Awaiting Delivery.",
+  posted: "Roaming the Land.",
+  completed: "Your curiosities have reached their keeper."
+};
+
+const FREE_SHIPPING_THRESHOLD_PENCE = 3000;
+const MAX_QUANTITY_PER_ITEM = 99;
+const MAX_TOTAL_QUANTITY = 99;
+const SHIPPING_OPTIONS = {
+  "royal-courier": {
+    id: "royal-courier",
+    name: "Royal Courier",
+    pricePence: 299
+  },
+  "royal-courier-tracked": {
+    id: "royal-courier-tracked",
+    name: "Royal Courier Tracked",
+    pricePence: 399
+  },
+  "free-journey": {
+    id: "free-journey",
+    name: "Free Journey",
+    pricePence: 0
+  }
+};
+
+const DATA_ROOT = path.join(__dirname, "data");
+
+function readJsonFile(fileName, fallback) {
+  try {
+    const filePath = path.join(DATA_ROOT, fileName);
+    const raw = fs.readFileSync(filePath, "utf8");
+    return JSON.parse(raw);
+  } catch {
+    return fallback;
+  }
+}
+
+function asArray(value, fallback = []) {
+  if (Array.isArray(value)) return value;
+  if (value && Array.isArray(value.products)) return value.products;
+  if (value && Array.isArray(value.tiers)) return value.tiers;
+  return fallback;
+}
+
+function toFiniteNumber(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function normalizeOrigin(value) {
+  if (!value || typeof value !== "string") return null;
+  try {
+    return new URL(value.trim()).origin;
+  } catch {
+    return null;
+  }
+}
+
+function getHeader(headers, name) {
+  if (!headers || typeof headers !== "object") return "";
+  const target = name.toLowerCase();
+  const entry = Object.entries(headers).find(([key]) => key.toLowerCase() === target);
+  return entry ? String(entry[1] || "") : "";
+}
+
+function getAllowedRedirectOrigins() {
+  const sources = [
+    process.env.CHECKOUT_ALLOWED_ORIGINS,
+    process.env.CUSTOM_DOMAIN_URL,
+    process.env.URL
+  ];
+
+  return [...new Set(
+    sources
+      .filter(Boolean)
+      .flatMap((value) => String(value).split(","))
+      .map((value) => normalizeOrigin(value))
+      .filter(Boolean)
+  )];
+}
+
+function getRedirectOrigin(req) {
+  const allowedOrigins = getAllowedRedirectOrigins();
+  if (!allowedOrigins.length) {
+    return null;
+  }
+
+  const requestOrigin = normalizeOrigin(getHeader(req.headers, "origin"))
+    || normalizeOrigin(getHeader(req.headers, "referer"));
+
+  if (!requestOrigin) {
+    return allowedOrigins[0];
+  }
+
+  if (!allowedOrigins.includes(requestOrigin)) {
+    return null;
+  }
+
+  return requestOrigin;
+}
+
+function buildLookupMaps(items, keyFields) {
+  return items.reduce((maps, item) => {
+    keyFields.forEach((field) => {
+      const key = item && item[field] ? String(item[field]).trim() : "";
+      if (key && !maps.has(key)) {
+        maps.set(key, item);
+      }
+    });
+    return maps;
+  }, new Map());
+}
+
+function getProductPrice(product, tierById, tierByName) {
+  const tierKey = product && product.tier ? String(product.tier).trim() : "";
+  const tierMeta = tierById.get(tierKey) || tierByName.get(tierKey);
+  const tierPrice = tierMeta ? toFiniteNumber(tierMeta.price) : null;
+  if (tierPrice !== null) return tierPrice;
+
+  const productPrice = product ? toFiniteNumber(product.price) : null;
+  return productPrice;
+}
+
+function normalizeRequestedItems(lineItems) {
+  const requestedItems = [];
+  const quantitiesByProductId = new Map();
+  let totalQuantity = 0;
+
+  for (const item of lineItems) {
+    const productId = item && typeof item.productId === "string"
+      ? item.productId.trim()
+      : item && typeof item.id === "string"
+        ? item.id.trim()
+        : "";
+
+    if (!productId) {
+      return { error: "Each cart item must include a valid product ID." };
+    }
+
+    const quantity = Number(item && item.quantity);
+    if (!Number.isInteger(quantity) || quantity < 1) {
+      return { error: "Each cart item must use a positive whole-number quantity." };
+    }
+
+    if (quantity > MAX_QUANTITY_PER_ITEM) {
+      return { error: `Quantity for a single item cannot exceed ${MAX_QUANTITY_PER_ITEM}.` };
+    }
+
+    totalQuantity += quantity;
+    if (totalQuantity > MAX_TOTAL_QUANTITY) {
+      return { error: `The cart cannot contain more than ${MAX_TOTAL_QUANTITY} items in total.` };
+    }
+
+    const nextQuantity = (quantitiesByProductId.get(productId) || 0) + quantity;
+    if (nextQuantity > MAX_QUANTITY_PER_ITEM) {
+      return { error: `Quantity for a single item cannot exceed ${MAX_QUANTITY_PER_ITEM}.` };
+    }
+
+    quantitiesByProductId.set(productId, nextQuantity);
+  }
+
+  quantitiesByProductId.forEach((quantity, productId) => {
+    requestedItems.push({ productId, quantity });
+  });
+
+  return { items: requestedItems };
+}
+
+const catalogueData = readJsonFile("catalogue.json", { products: [] });
+const tiersData = readJsonFile("tiers.json", { tiers: [] });
+const products = asArray(catalogueData, []);
+const tiers = asArray(tiersData, []);
+const productsById = buildLookupMaps(products, ["id"]);
+const tiersById = buildLookupMaps(tiers, ["id"]);
+const tiersByName = buildLookupMaps(tiers, ["name"]);
+
+function getDashboardBearerToken(req) {
+  const authHeader = req.headers["authorization"] || req.headers["Authorization"] || "";
+  return authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+}
+
+function verifyDashboardToken(token) {
+  const secret = process.env.DASHBOARD_SECRET;
+  if (!token || !secret) return false;
+
+  const dotIndex = token.lastIndexOf(".");
+  if (dotIndex === -1) return false;
+
+  const timestamp = token.substring(0, dotIndex);
+  const providedHmac = token.substring(dotIndex + 1);
+  const expectedHmac = crypto.createHmac("sha256", secret).update(timestamp).digest("hex");
+
+  try {
+    const a = Buffer.from(providedHmac, "hex");
+    const b = Buffer.from(expectedHmac, "hex");
+    if (a.length !== 32 || b.length !== 32) return false;
+    if (!crypto.timingSafeEqual(a, b)) return false;
+  } catch {
+    return false;
+  }
+
+  const age = Date.now() - parseInt(timestamp, 10);
+  return age >= 0 && age < DASHBOARD_TOKEN_LIFETIME_MS;
+}
+
+function defaultInventoryEntry(productId) {
+  return {
+    productId,
+    stock: null,
+    lowStockThreshold: 3,
+    available: true,
+    availableStorefrontMessage: "shelves",
+    unavailableStorefrontMessage: "roaming",
+    lastUpdated: Date.now()
+  };
+}
 
 function getTokenIssuedAtMs(token) {
   const parts = String(token || "").split(".");
@@ -383,6 +609,1096 @@ async function handleCustomerLogout(req, res) {
     sendPrivateApiJson(res, 503, {
       error: "Could not persist logout state. Please try again."
     });
+  }
+}
+
+async function handleDashboardLogin(req, res) {
+  if (req.method !== "POST") {
+    sendJson(res, 405, { error: "Method not allowed." });
+    return;
+  }
+
+  let bodyText;
+  try {
+    bodyText = await readRequestBody(req);
+  } catch {
+    sendJson(res, 400, { error: "Invalid request." });
+    return;
+  }
+
+  let password;
+  try {
+    ({ password } = JSON.parse(bodyText || "{}"));
+  } catch {
+    sendJson(res, 400, { error: "Invalid request." });
+    return;
+  }
+
+  const correctPassword = process.env.DASHBOARD_PASSWORD;
+  const secret = process.env.DASHBOARD_SECRET;
+
+  if (!correctPassword || !secret) {
+    console.error("dashboard-login: DASHBOARD_PASSWORD or DASHBOARD_SECRET not set.");
+    sendJson(res, 500, {
+      error: "Dashboard is not yet configured. Please set DASHBOARD_PASSWORD and DASHBOARD_SECRET in your Netlify environment variables."
+    });
+    return;
+  }
+
+  let passwordMatch = false;
+  try {
+    const inputBuf = Buffer.from(String(password || ""));
+    const correctBuf = Buffer.from(String(correctPassword));
+    if (inputBuf.length === correctBuf.length) {
+      passwordMatch = crypto.timingSafeEqual(inputBuf, correctBuf);
+    }
+  } catch {
+    passwordMatch = false;
+  }
+
+  if (!passwordMatch) {
+    sendJson(res, 401, { error: "Incorrect key. The ledger remains closed." });
+    return;
+  }
+
+  const timestamp = Date.now().toString();
+  const hmac = crypto.createHmac("sha256", secret).update(timestamp).digest("hex");
+
+  sendJson(res, 200, { token: `${timestamp}.${hmac}` });
+}
+
+async function loadInventoryDocument(client = pool) {
+  const result = await client.query(
+    `SELECT inventory
+    FROM inventory_state
+    WHERE id = 'all'
+    LIMIT 1`
+  );
+
+  const inventory = result.rows[0]?.inventory || {};
+  if (typeof inventory !== "object" || inventory === null || Array.isArray(inventory)) {
+    throw new Error("Inventory payload is malformed.");
+  }
+
+  return inventory;
+}
+
+async function handleGetInventory(req, res) {
+  if (req.method !== "GET") {
+    sendJson(res, 405, { error: "Method not allowed." });
+    return;
+  }
+
+  try {
+    const inventory = await loadInventoryDocument(pool);
+
+    sendJson(res, 200, { inventory }, {
+      "Cache-Control": "no-store",
+      "Access-Control-Allow-Origin": "*"
+    });
+  } catch (error) {
+    console.error("get-inventory error:", error.message);
+    sendJson(res, 503, {
+      error: "Inventory could not be verified. Please try again shortly."
+    }, {
+      "Cache-Control": "no-store",
+      "Access-Control-Allow-Origin": "*"
+    });
+  }
+}
+
+async function handleUpdateInventory(req, res) {
+  if (req.method !== "POST") {
+    sendJson(res, 405, { error: "Method not allowed." });
+    return;
+  }
+
+  const token = getDashboardBearerToken(req);
+  if (!verifyDashboardToken(token)) {
+    sendJson(res, 401, { error: "Unauthorised." });
+    return;
+  }
+
+  let action;
+  let productId;
+  let value;
+  try {
+    ({ action, productId, value } = JSON.parse(await readRequestBody(req) || "{}"));
+  } catch {
+    sendJson(res, 400, { error: "Invalid request body." });
+    return;
+  }
+
+  if (!action) {
+    sendJson(res, 400, { error: "action is required." });
+    return;
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const locked = await client.query(
+      `SELECT inventory
+      FROM inventory_state
+      WHERE id = 'all'
+      FOR UPDATE`
+    );
+
+    const inventory = locked.rows[0]?.inventory || {};
+
+    if (action === "bulkRestock") {
+      const amount = Math.max(0, Number(value) || 0);
+      Object.keys(inventory).forEach((id) => {
+        const entry = inventory[id];
+        entry.stock = entry.stock === null ? amount : Math.max(0, entry.stock + amount);
+        entry.lastUpdated = Date.now();
+      });
+    } else {
+      if (!productId) {
+        await client.query("ROLLBACK");
+        sendJson(res, 400, { error: "productId is required." });
+        return;
+      }
+
+      if (!inventory[productId]) {
+        inventory[productId] = defaultInventoryEntry(productId);
+      }
+
+      const entry = inventory[productId];
+      switch (action) {
+        case "setStock":
+          entry.stock = value === null ? null : Math.max(0, Number(value) || 0);
+          break;
+        case "adjustStock":
+          if (entry.stock === null) {
+            entry.stock = Math.max(0, Number(value) || 0);
+          } else {
+            entry.stock = Math.max(0, entry.stock + (Number(value) || 0));
+          }
+          break;
+        case "setThreshold":
+          entry.lowStockThreshold = Math.max(0, Number(value) || 0);
+          break;
+        case "setAvailable":
+          entry.available = Boolean(value);
+          break;
+        case "setMessage":
+          if (typeof value === "object" && value !== null) {
+            if (value.availableStorefrontMessage) {
+              entry.availableStorefrontMessage = String(value.availableStorefrontMessage);
+            }
+            if (value.unavailableStorefrontMessage) {
+              entry.unavailableStorefrontMessage = String(value.unavailableStorefrontMessage);
+            }
+          } else {
+            entry.availableStorefrontMessage = String(value || "shelves");
+          }
+          delete entry.storefrontMessage;
+          delete entry.outOfStockMessage;
+          delete entry.availableMessage;
+          delete entry.unavailableMessage;
+          break;
+        default:
+          await client.query("ROLLBACK");
+          sendJson(res, 400, { error: `Unknown action: ${action}` });
+          return;
+      }
+
+      entry.lastUpdated = Date.now();
+    }
+
+    await client.query(
+      `INSERT INTO inventory_state (id, inventory)
+      VALUES ('all', $1::jsonb)
+      ON CONFLICT (id)
+      DO UPDATE SET inventory = EXCLUDED.inventory`,
+      [JSON.stringify(inventory)]
+    );
+
+    await client.query("COMMIT");
+    sendJson(res, 200, { ok: true, inventory });
+  } catch (error) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // Ignore rollback failures so original error is reported.
+    }
+
+    console.error("update-inventory error:", error.message);
+    sendJson(res, 500, { error: "The Merchant's Supplies could not be updated." });
+  } finally {
+    client.release();
+  }
+}
+
+async function handleGetOrderStatus(req, res) {
+  if (req.method !== "GET") {
+    sendJson(res, 405, { error: "Method not allowed." });
+    return;
+  }
+
+  const token = getDashboardBearerToken(req);
+  if (!verifyDashboardToken(token)) {
+    sendJson(res, 401, { error: "Unauthorised." });
+    return;
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT order_id, status, updated_at
+      FROM order_status_records`
+    );
+
+    const statuses = {};
+    result.rows.forEach((row) => {
+      statuses[row.order_id] = {
+        status: row.status,
+        updatedAt: Number(row.updated_at)
+      };
+    });
+
+    sendPrivateApiJson(res, 200, { statuses });
+  } catch (error) {
+    console.error("get-order-status error:", error.message);
+    sendPrivateApiJson(res, 500, { error: "Order status could not be retrieved." });
+  }
+}
+
+async function handleUpdateOrderStatus(req, res) {
+  if (req.method !== "POST") {
+    sendJson(res, 405, { error: "Method not allowed." });
+    return;
+  }
+
+  const token = getDashboardBearerToken(req);
+  if (!verifyDashboardToken(token)) {
+    sendJson(res, 401, { error: "Unauthorised." });
+    return;
+  }
+
+  let orderId;
+  let status;
+  try {
+    ({ orderId, status } = JSON.parse(await readRequestBody(req) || "{}"));
+  } catch {
+    sendJson(res, 400, { error: "Invalid request body." });
+    return;
+  }
+
+  if (!orderId || !ORDER_STATUS_VALUES.includes(status)) {
+    sendJson(res, 400, { error: "A valid orderId and status are required." });
+    return;
+  }
+
+  const record = { status, updatedAt: Date.now() };
+
+  try {
+    await pool.query(
+      `INSERT INTO order_status_records (order_id, status, updated_at)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (order_id)
+      DO UPDATE SET status = EXCLUDED.status, updated_at = EXCLUDED.updated_at`,
+      [orderId, status, record.updatedAt]
+    );
+
+    sendPrivateApiJson(res, 200, { ok: true, status: record });
+  } catch (error) {
+    console.error("update-order-status error:", error.message);
+    sendPrivateApiJson(res, 500, { error: "Order status could not be updated." });
+  }
+}
+
+async function loadCustomerAddresses(customerId) {
+  const result = await pool.query(
+    `SELECT addresses
+    FROM customer_addresses_state
+    WHERE customer_id = $1
+    LIMIT 1`,
+    [customerId]
+  );
+
+  const addresses = result.rows[0]?.addresses || [];
+  return Array.isArray(addresses) ? addresses : [];
+}
+
+async function writeCustomerAddresses(customerId, addresses) {
+  await pool.query(
+    `INSERT INTO customer_addresses_state (customer_id, addresses)
+    VALUES ($1, $2::jsonb)
+    ON CONFLICT (customer_id)
+    DO UPDATE SET addresses = EXCLUDED.addresses`,
+    [customerId, JSON.stringify(addresses)]
+  );
+}
+
+async function handleCustomerAddresses(req, res) {
+  if (req.method !== "GET" && req.method !== "POST" && req.method !== "DELETE") {
+    sendPrivateApiJson(res, 405, { error: "Method not allowed." });
+    return;
+  }
+
+  const auth = await authenticateProfileRequest(req);
+  if (!auth.ok) {
+    if (auth.statusCode === 503) {
+      sendPrivateApiJson(res, 503, {
+        error: "Authentication state could not be verified. Please try again."
+      });
+      return;
+    }
+
+    sendPrivateApiJson(res, 401, { error: "Please sign in again." });
+    return;
+  }
+
+  if (req.method === "GET") {
+    const addresses = await loadCustomerAddresses(auth.customerId);
+    sendPrivateApiJson(res, 200, { addresses });
+    return;
+  }
+
+  if (req.method === "POST") {
+    let body;
+    try {
+      body = JSON.parse(await readRequestBody(req));
+    } catch {
+      sendPrivateApiJson(res, 400, { error: "Invalid request body." });
+      return;
+    }
+
+    const { id, address } = body;
+    if (!address || !address.line1 || !address.city || !address.postcode || !address.country) {
+      sendPrivateApiJson(res, 400, {
+        error: "A Landmark needs at least an address line, city, postcode, and country."
+      });
+      return;
+    }
+
+    const addresses = await loadCustomerAddresses(auth.customerId);
+    const record = {
+      id: id || crypto.randomUUID(),
+      label: String(address.label || "").trim() || "Landmark",
+      line1: String(address.line1).trim(),
+      line2: String(address.line2 || "").trim(),
+      city: String(address.city).trim(),
+      region: String(address.region || "").trim(),
+      postcode: String(address.postcode).trim(),
+      country: String(address.country).trim(),
+      isDefault: Boolean(address.isDefault)
+    };
+
+    if (record.isDefault) {
+      addresses.forEach((a) => {
+        a.isDefault = false;
+      });
+    }
+
+    const existingIndex = addresses.findIndex((a) => a.id === record.id);
+    if (existingIndex >= 0) {
+      addresses[existingIndex] = record;
+    } else {
+      addresses.push(record);
+    }
+
+    await writeCustomerAddresses(auth.customerId, addresses);
+    sendPrivateApiJson(res, 200, { addresses });
+    return;
+  }
+
+  let body;
+  try {
+    body = JSON.parse(await readRequestBody(req));
+  } catch {
+    sendPrivateApiJson(res, 400, { error: "Invalid request body." });
+    return;
+  }
+
+  const { id } = body;
+  if (!id) {
+    sendPrivateApiJson(res, 400, { error: "A Landmark id is required." });
+    return;
+  }
+
+  const addresses = (await loadCustomerAddresses(auth.customerId)).filter((a) => a.id !== id);
+  await writeCustomerAddresses(auth.customerId, addresses);
+  sendPrivateApiJson(res, 200, { addresses });
+}
+
+async function handleCreateCheckoutSession(req, res) {
+  if (req.method !== "POST") {
+    sendJson(res, 405, { error: "Method not allowed." });
+    return;
+  }
+
+  let lineItems;
+  let shippingMethod;
+  try {
+    ({ lineItems, shippingMethod } = JSON.parse(await readRequestBody(req)));
+  } catch {
+    sendJson(res, 400, { error: "Invalid request body." });
+    return;
+  }
+
+  if (!Array.isArray(lineItems) || lineItems.length === 0) {
+    sendJson(res, 400, { error: "Cart is empty." });
+    return;
+  }
+
+  const normalized = normalizeRequestedItems(lineItems);
+  if (normalized.error) {
+    sendJson(res, 400, { error: normalized.error });
+    return;
+  }
+
+  const resolvedItems = [];
+  let subtotalPence = 0;
+
+  for (const item of normalized.items) {
+    const product = productsById.get(item.productId);
+    if (!product) {
+      sendJson(res, 400, { error: `Unknown product ID: ${item.productId}` });
+      return;
+    }
+
+    const unitPrice = getProductPrice(product, tiersById, tiersByName);
+    if (unitPrice === null || unitPrice <= 0) {
+      sendJson(res, 400, { error: `Product pricing is unavailable for ${item.productId}.` });
+      return;
+    }
+
+    const unitAmountPence = Math.round(unitPrice * 100);
+    subtotalPence += unitAmountPence * item.quantity;
+
+    resolvedItems.push({
+      productId: item.productId,
+      name: typeof product.name === "string" && product.name.trim() ? product.name.trim() : item.productId,
+      quantity: item.quantity,
+      unitAmountPence,
+      unitPrice
+    });
+  }
+
+  const subtotal = subtotalPence / 100;
+  const shippingOption = subtotalPence >= FREE_SHIPPING_THRESHOLD_PENCE
+    ? SHIPPING_OPTIONS["free-journey"]
+    : SHIPPING_OPTIONS[shippingMethod];
+
+  if (!shippingOption || (subtotalPence < FREE_SHIPPING_THRESHOLD_PENCE && shippingOption.id === "free-journey")) {
+    sendJson(res, 400, { error: "Please choose a valid shipping option." });
+    return;
+  }
+
+  const shippingCostPence = shippingOption.pricePence;
+  const finalTotalPence = subtotalPence + shippingCostPence;
+  const redirectOrigin = getRedirectOrigin(req);
+  if (!redirectOrigin) {
+    sendJson(res, 500, { error: "Checkout redirect origin is not configured." });
+    return;
+  }
+
+  try {
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ["card"],
+      line_items: [
+        ...resolvedItems.map((item) => ({
+          price_data: {
+            currency: "gbp",
+            product_data: {
+              name: item.name
+            },
+            unit_amount: item.unitAmountPence
+          },
+          quantity: item.quantity
+        })),
+        ...(shippingCostPence > 0
+          ? [{
+              price_data: {
+                currency: "gbp",
+                product_data: {
+                  name: shippingOption.name
+                },
+                unit_amount: shippingCostPence
+              },
+              quantity: 1
+            }]
+          : [])
+      ],
+      mode: "payment",
+      success_url: `${redirectOrigin}/success.html`,
+      cancel_url: `${redirectOrigin}/checkout.html`,
+      metadata: {
+        orderItems: JSON.stringify(resolvedItems.map((item) => ({ id: item.productId, qty: item.quantity }))),
+        shippingMethod: shippingOption.id,
+        shippingLabel: shippingOption.name,
+        shippingAmount: (shippingCostPence / 100).toFixed(2),
+        subtotal: subtotal.toFixed(2),
+        total: (finalTotalPence / 100).toFixed(2)
+      }
+    });
+
+    sendJson(res, 200, { url: session.url });
+  } catch (error) {
+    console.error("Stripe error:", error.message);
+    sendJson(res, 500, { error: "Payment session could not be created. Please try again." });
+  }
+}
+
+async function handleGetOrders(req, res) {
+  if (req.method !== "GET") {
+    sendJson(res, 405, { error: "Method not allowed." });
+    return;
+  }
+
+  const token = getDashboardBearerToken(req);
+  if (!verifyDashboardToken(token)) {
+    sendPrivateApiJson(res, 401, { error: "Unauthorised. Please log in again." });
+    return;
+  }
+
+  if (!process.env.STRIPE_SECRET_KEY) {
+    sendPrivateApiJson(res, 500, { error: "Stripe is not configured." });
+    return;
+  }
+
+  try {
+    const sessions = await stripe.checkout.sessions.list({
+      limit: 100,
+      expand: ["data.line_items"]
+    });
+
+    const orders = sessions.data
+      .filter((s) => s.payment_status === "paid")
+      .map((s) => {
+        const items = (s.line_items?.data || []).map((item) => ({
+          name: item.description || "Treasure",
+          quantity: item.quantity || 1,
+          unitAmount: parseFloat(((item.amount_total / 100) / (item.quantity || 1)).toFixed(2)),
+          totalAmount: parseFloat((item.amount_total / 100).toFixed(2))
+        }));
+
+        const addr = s.shipping_details?.address || s.customer_details?.address || null;
+        const shippingAddress = addr
+          ? [addr.line1, addr.line2, addr.city, addr.state, addr.postal_code, addr.country]
+              .filter(Boolean)
+              .join(", ")
+          : null;
+
+        return {
+          id: s.id,
+          shortId: s.id.slice(-8).toUpperCase(),
+          paymentIntentId: s.payment_intent || null,
+          customerName: s.customer_details?.name || "Unknown Traveller",
+          customerEmail: s.customer_details?.email || "Unknown",
+          shippingAddress,
+          shippingMethod: s.metadata?.shippingLabel || null,
+          shippingAmount: parseFloat(s.metadata?.shippingAmount || "0"),
+          items,
+          amountTotal: parseFloat((s.amount_total / 100).toFixed(2)),
+          currency: (s.currency || "gbp").toUpperCase(),
+          paymentStatus: s.payment_status,
+          created: s.created * 1000
+        };
+      });
+
+    sendPrivateApiJson(res, 200, { orders });
+  } catch (error) {
+    console.error("get-orders Stripe error:", error.message);
+    sendPrivateApiJson(res, 500, { error: "The ledger could not be consulted. Please try again." });
+  }
+}
+
+async function handleCustomerOrders(req, res) {
+  if (req.method !== "GET") {
+    sendPrivateApiJson(res, 405, { error: "Method not allowed." });
+    return;
+  }
+
+  const auth = await authenticateProfileRequest(req);
+  if (!auth.ok) {
+    if (auth.statusCode === 503) {
+      sendPrivateApiJson(res, 503, {
+        error: "Authentication state could not be verified. Please try again."
+      });
+      return;
+    }
+
+    sendPrivateApiJson(res, 401, { error: "Please sign in again." });
+    return;
+  }
+
+  if (!process.env.STRIPE_SECRET_KEY) {
+    sendPrivateApiJson(res, 500, { error: "Stripe is not configured." });
+    return;
+  }
+
+  try {
+    const sessions = await stripe.checkout.sessions.list({
+      limit: 100,
+      expand: ["data.line_items"]
+    });
+
+    const ownOrders = sessions.data.filter(
+      (s) => s.payment_status === "paid" &&
+             (s.customer_details?.email || "").trim().toLowerCase() === auth.customer.email
+    );
+
+    const ids = ownOrders.map((s) => s.id);
+    let statusRows = [];
+    if (ids.length) {
+      const statusResult = await pool.query(
+        `SELECT order_id, status, updated_at
+        FROM order_status_records
+        WHERE order_id = ANY($1::text[])`,
+        [ids]
+      );
+      statusRows = statusResult.rows;
+    }
+
+    const statusById = new Map(statusRows.map((row) => [row.order_id, row.status]));
+
+    const messages = ownOrders.map((s) => {
+      const items = (s.line_items?.data || []).map((item) => ({
+        name: item.description || "Treasure",
+        quantity: item.quantity || 1,
+        unitAmount: parseFloat(((item.amount_total / 100) / (item.quantity || 1)).toFixed(2)),
+        totalAmount: parseFloat((item.amount_total / 100).toFixed(2))
+      }));
+
+      const status = statusById.get(s.id) || "new";
+
+      return {
+        id: s.id,
+        shortId: s.id.slice(-8).toUpperCase(),
+        created: s.created * 1000,
+        items,
+        amountTotal: parseFloat((s.amount_total / 100).toFixed(2)),
+        currency: (s.currency || "gbp").toUpperCase(),
+        status,
+        statusText: ORDER_STATUS_COPY[status] || ORDER_STATUS_COPY.new
+      };
+    });
+
+    messages.sort((a, b) => b.created - a.created);
+    sendPrivateApiJson(res, 200, { messages });
+  } catch (error) {
+    console.error("customer-orders Stripe error:", error.message);
+    sendPrivateApiJson(res, 500, {
+      error: "Your Merchant's Messages could not be gathered. Please try again."
+    });
+  }
+}
+
+async function handleGetFeaturedTreasure(req, res) {
+  try {
+    const result = await pool.query(
+      `SELECT payload
+      FROM featured_treasure_state
+      WHERE id = 'data'
+      LIMIT 1`
+    );
+
+    let featuredData = result.rows[0]?.payload || null;
+
+    if (!featuredData) {
+      const filePath = path.join(__dirname, "data", "featured-treasure.json");
+      if (fs.existsSync(filePath)) {
+        featuredData = JSON.parse(fs.readFileSync(filePath, "utf8"));
+      } else {
+        featuredData = {
+          title: "✨ Featured Treasure",
+          intro: "",
+          closingNote: "",
+          settings: { showWhenOutOfStock: true },
+          features: []
+        };
+      }
+    }
+
+    sendJson(res, 200, featuredData, {
+      "Cache-Control": "no-store",
+      "Access-Control-Allow-Origin": "*"
+    });
+  } catch (error) {
+    console.error("get-featured-treasure error:", error.message);
+    try {
+      const filePath = path.join(__dirname, "data", "featured-treasure.json");
+      const fallback = fs.readFileSync(filePath, "utf8");
+      res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+      res.end(fallback);
+    } catch {
+      sendJson(res, 500, { error: "Could not read Featured Treasure data." });
+    }
+  }
+}
+
+async function handleUpdateFeaturedTreasure(req, res) {
+  if (req.method !== "POST") {
+    sendJson(res, 405, { error: "Method not allowed." });
+    return;
+  }
+
+  const token = getDashboardBearerToken(req);
+  if (!verifyDashboardToken(token)) {
+    sendPrivateApiJson(res, 401, { error: "Unauthorised." });
+    return;
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(await readRequestBody(req) || "{}");
+  } catch {
+    sendPrivateApiJson(res, 400, { error: "Invalid JSON body." });
+    return;
+  }
+
+  if (!payload || typeof payload !== "object") {
+    sendPrivateApiJson(res, 400, { error: "Payload required." });
+    return;
+  }
+
+  if (Array.isArray(payload.features)) {
+    let publishedFound = false;
+    payload.features.forEach((feature) => {
+      if (feature.status === "published") {
+        if (!publishedFound) {
+          publishedFound = true;
+        } else {
+          feature.status = "draft";
+        }
+      }
+    });
+  }
+
+  try {
+    await pool.query(
+      `INSERT INTO featured_treasure_state (id, payload)
+      VALUES ('data', $1::jsonb)
+      ON CONFLICT (id)
+      DO UPDATE SET payload = EXCLUDED.payload`,
+      [JSON.stringify(payload)]
+    );
+
+    sendPrivateApiJson(res, 200, { ok: true, data: payload });
+  } catch (error) {
+    console.error("update-featured-treasure error:", error.message);
+    sendPrivateApiJson(res, 500, { error: "Featured Treasure could not be saved." });
+  }
+}
+
+async function handleGetDeskEntries(req, res) {
+  try {
+    const result = await pool.query(
+      `SELECT payload
+      FROM desk_entries_state
+      WHERE id = 'data'
+      LIMIT 1`
+    );
+
+    let deskData = result.rows[0]?.payload || null;
+    if (!deskData) {
+      const filePath = path.join(__dirname, "data", "desk-entries.json");
+      if (fs.existsSync(filePath)) {
+        deskData = JSON.parse(fs.readFileSync(filePath, "utf8"));
+      } else {
+        deskData = {
+          title: "🕯️ From the Merchant's Desk",
+          subtitle: "",
+          closingNote: "",
+          settings: { homepageLimit: 3 },
+          entries: []
+        };
+      }
+    }
+
+    sendJson(res, 200, deskData, {
+      "Cache-Control": "no-store",
+      "Access-Control-Allow-Origin": "*"
+    });
+  } catch (error) {
+    console.error("get-desk-entries error:", error.message);
+    try {
+      const filePath = path.join(__dirname, "data", "desk-entries.json");
+      const fallback = fs.readFileSync(filePath, "utf8");
+      res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+      res.end(fallback);
+    } catch {
+      sendJson(res, 500, { error: "Could not read desk entries data." });
+    }
+  }
+}
+
+async function handleUpdateDeskEntries(req, res) {
+  if (req.method !== "POST") {
+    sendJson(res, 405, { error: "Method not allowed." });
+    return;
+  }
+
+  const token = getDashboardBearerToken(req);
+  if (!verifyDashboardToken(token)) {
+    sendPrivateApiJson(res, 401, { error: "Unauthorised." });
+    return;
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(await readRequestBody(req) || "{}");
+  } catch {
+    sendPrivateApiJson(res, 400, { error: "Invalid JSON body." });
+    return;
+  }
+
+  if (!payload || typeof payload !== "object") {
+    sendPrivateApiJson(res, 400, { error: "Payload required." });
+    return;
+  }
+
+  try {
+    await pool.query(
+      `INSERT INTO desk_entries_state (id, payload)
+      VALUES ('data', $1::jsonb)
+      ON CONFLICT (id)
+      DO UPDATE SET payload = EXCLUDED.payload`,
+      [JSON.stringify(payload)]
+    );
+
+    sendPrivateApiJson(res, 200, { ok: true, data: payload });
+  } catch (error) {
+    console.error("update-desk-entries error:", error.message);
+    sendPrivateApiJson(res, 500, { error: "Journal entries could not be saved." });
+  }
+}
+
+async function handlePromoteMerchant(req, res) {
+  if (req.method !== "POST") {
+    sendJson(res, 405, { error: "Method not allowed." });
+    return;
+  }
+
+  let email;
+  let setupKey;
+  try {
+    ({ email, setupKey } = JSON.parse(await readRequestBody(req)));
+  } catch {
+    sendJson(res, 400, { error: "Invalid request body." });
+    return;
+  }
+
+  const correctKey = process.env.MERCHANT_SETUP_KEY;
+  if (!correctKey) {
+    console.error("promote-merchant: MERCHANT_SETUP_KEY not set.");
+    sendJson(res, 500, { error: "Merchant setup is not yet configured." });
+    return;
+  }
+
+  let keyMatch = false;
+  try {
+    const inputBuf = Buffer.from(String(setupKey || ""));
+    const correctBuf = Buffer.from(String(correctKey));
+    if (inputBuf.length === correctBuf.length) {
+      keyMatch = crypto.timingSafeEqual(inputBuf, correctBuf);
+    }
+  } catch {
+    keyMatch = false;
+  }
+
+  if (!keyMatch) {
+    sendJson(res, 401, { error: "Incorrect setup key." });
+    return;
+  }
+
+  const key = normaliseEmail(email);
+  if (!key) {
+    sendJson(res, 400, { error: "A valid email address is required." });
+    return;
+  }
+
+  try {
+    const customerResult = await pool.query(
+      `SELECT id, name, email, role
+      FROM customers
+      WHERE email = $1
+      LIMIT 1`,
+      [key]
+    );
+
+    const customer = customerResult.rows[0] || null;
+    if (!customer) {
+      sendJson(res, 404, { error: "No Traveller account is known by that email address." });
+      return;
+    }
+
+    const updateResult = await pool.query(
+      `UPDATE customers
+      SET role = 'merchant'
+      WHERE id = $1
+      RETURNING id, name, email, role`,
+      [customer.id]
+    );
+
+    const updated = updateResult.rows[0] || null;
+    if (!updated) {
+      sendJson(res, 404, { error: "No Traveller account is known by that email address." });
+      return;
+    }
+
+    sendJson(res, 200, {
+      ok: true,
+      customer: {
+        id: updated.id,
+        name: updated.name,
+        email: updated.email,
+        role: updated.role
+      }
+    });
+  } catch (error) {
+    if (isProfileWriteStateError(error)) {
+      sendJson(res, 503, {
+        error: "Merchant promotion could not be completed right now. Please try again."
+      });
+      return;
+    }
+
+    throw error;
+  }
+}
+
+async function handleStripeWebhook(req, res) {
+  if (req.method !== "POST") {
+    res.writeHead(405, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end("Method not allowed.");
+    return;
+  }
+
+  const signature = req.headers["stripe-signature"];
+  const secret = process.env.STRIPE_WEBHOOK_SECRET;
+
+  if (!secret) {
+    console.error("stripe-webhook: STRIPE_WEBHOOK_SECRET not set. Skipping.");
+    res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end("Webhook secret not configured.");
+    return;
+  }
+
+  let rawBody;
+  try {
+    rawBody = await readRequestBody(req);
+  } catch {
+    res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end("Webhook signature error: request body could not be read.");
+    return;
+  }
+
+  let stripeEvent;
+  try {
+    stripeEvent = stripe.webhooks.constructEvent(rawBody, signature, secret);
+  } catch (error) {
+    console.error("stripe-webhook: signature verification failed:", error.message);
+    res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end(`Webhook signature error: ${error.message}`);
+    return;
+  }
+
+  if (stripeEvent.type !== "checkout.session.completed") {
+    res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end("Event acknowledged.");
+    return;
+  }
+
+  const session = stripeEvent.data.object;
+  let orderItems = [];
+  try {
+    orderItems = JSON.parse(session.metadata?.orderItems || "[]");
+  } catch {
+    console.warn("stripe-webhook: could not parse orderItems from session metadata.");
+    res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end("No orderItems in metadata.");
+    return;
+  }
+
+  if (!orderItems.length) {
+    res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end("No items to process.");
+    return;
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const locked = await client.query(
+      `SELECT inventory
+      FROM inventory_state
+      WHERE id = 'all'
+      FOR UPDATE`
+    );
+
+    const inventory = locked.rows[0]?.inventory || {};
+    if (typeof inventory !== "object" || inventory === null || Array.isArray(inventory)) {
+      throw new Error("Inventory payload is malformed.");
+    }
+
+    const shortages = [];
+    for (const { id, qty } of orderItems) {
+      const item = inventory[id];
+      if (!item || item.stock === null) continue;
+
+      const stock = Number(item.stock);
+      if (!Number.isFinite(stock) || item.available === false || stock < qty) {
+        shortages.push({
+          productId: id,
+          requestedQty: qty,
+          availableStock: Number.isFinite(stock) ? stock : null,
+          availableFlag: item.available
+        });
+      }
+    }
+
+    if (shortages.length) {
+      await client.query("ROLLBACK");
+      console.error("stripe-webhook: manual intervention required - insufficient stock after payment", {
+        stripeEventId: stripeEvent.id,
+        checkoutSessionId: session.id || null,
+        paymentIntentId: session.payment_intent || null,
+        orderItems,
+        shortages
+      });
+
+      res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end("Insufficient stock after payment; manual intervention required.");
+      return;
+    }
+
+    const now = Date.now();
+    for (const { id, qty } of orderItems) {
+      const item = inventory[id];
+      if (!item || item.stock === null) continue;
+      item.stock = Number(item.stock) - qty;
+      item.lastUpdated = now;
+    }
+
+    await client.query(
+      `INSERT INTO inventory_state (id, inventory)
+      VALUES ('all', $1::jsonb)
+      ON CONFLICT (id)
+      DO UPDATE SET inventory = EXCLUDED.inventory`,
+      [JSON.stringify(inventory)]
+    );
+
+    await client.query("COMMIT");
+    res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end("Stock updated.");
+  } catch (error) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // Ignore rollback failures so original error is reported.
+    }
+
+    console.error("stripe-webhook: failed to update inventory:", error.message);
+    res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end("Inventory update failed. Please retry webhook delivery.");
+  } finally {
+    client.release();
   }
 }
 
@@ -775,6 +2091,196 @@ const server = http.createServer((req, res) => {
         sendPrivateApiJson(res, 503, {
           error: "Could not persist logout state. Please try again."
         });
+      } else {
+        res.end();
+      }
+    });
+    return;
+  }
+
+  if (requestPath === "/.netlify/functions/customer-addresses") {
+    handleCustomerAddresses(req, res).catch((error) => {
+      console.error("customer-addresses: unexpected failure:", error);
+      if (!res.headersSent) {
+        sendPrivateApiJson(res, 500, { error: "Something went wrong. Please try again." });
+      } else {
+        res.end();
+      }
+    });
+    return;
+  }
+
+  if (requestPath === "/.netlify/functions/get-inventory") {
+    handleGetInventory(req, res).catch((error) => {
+      console.error("get-inventory: unexpected failure:", error);
+      if (!res.headersSent) {
+        sendJson(res, 503, {
+          error: "Inventory could not be verified. Please try again shortly."
+        }, {
+          "Cache-Control": "no-store",
+          "Access-Control-Allow-Origin": "*"
+        });
+      } else {
+        res.end();
+      }
+    });
+    return;
+  }
+
+  if (requestPath === "/.netlify/functions/update-inventory") {
+    handleUpdateInventory(req, res).catch((error) => {
+      console.error("update-inventory: unexpected failure:", error);
+      if (!res.headersSent) {
+        sendJson(res, 500, { error: "The Merchant's Supplies could not be updated." });
+      } else {
+        res.end();
+      }
+    });
+    return;
+  }
+
+  if (requestPath === "/.netlify/functions/dashboard-login") {
+    handleDashboardLogin(req, res).catch((error) => {
+      console.error("dashboard-login: unexpected failure:", error);
+      if (!res.headersSent) {
+        sendJson(res, 500, {
+          error: "Dashboard is not yet configured. Please set DASHBOARD_PASSWORD and DASHBOARD_SECRET in your Netlify environment variables."
+        });
+      } else {
+        res.end();
+      }
+    });
+    return;
+  }
+
+  if (requestPath === "/.netlify/functions/get-order-status") {
+    handleGetOrderStatus(req, res).catch((error) => {
+      console.error("get-order-status: unexpected failure:", error);
+      if (!res.headersSent) {
+        sendPrivateApiJson(res, 500, { error: "Order status could not be retrieved." });
+      } else {
+        res.end();
+      }
+    });
+    return;
+  }
+
+  if (requestPath === "/.netlify/functions/update-order-status") {
+    handleUpdateOrderStatus(req, res).catch((error) => {
+      console.error("update-order-status: unexpected failure:", error);
+      if (!res.headersSent) {
+        sendPrivateApiJson(res, 500, { error: "Order status could not be updated." });
+      } else {
+        res.end();
+      }
+    });
+    return;
+  }
+
+  if (requestPath === "/.netlify/functions/get-orders") {
+    handleGetOrders(req, res).catch((error) => {
+      console.error("get-orders: unexpected failure:", error);
+      if (!res.headersSent) {
+        sendPrivateApiJson(res, 500, { error: "The ledger could not be consulted. Please try again." });
+      } else {
+        res.end();
+      }
+    });
+    return;
+  }
+
+  if (requestPath === "/.netlify/functions/customer-orders") {
+    handleCustomerOrders(req, res).catch((error) => {
+      console.error("customer-orders: unexpected failure:", error);
+      if (!res.headersSent) {
+        sendPrivateApiJson(res, 500, {
+          error: "Your Merchant's Messages could not be gathered. Please try again."
+        });
+      } else {
+        res.end();
+      }
+    });
+    return;
+  }
+
+  if (requestPath === "/.netlify/functions/create-checkout-session") {
+    handleCreateCheckoutSession(req, res).catch((error) => {
+      console.error("create-checkout-session: unexpected failure:", error);
+      if (!res.headersSent) {
+        sendJson(res, 500, { error: "Payment session could not be created. Please try again." });
+      } else {
+        res.end();
+      }
+    });
+    return;
+  }
+
+  if (requestPath === "/.netlify/functions/get-featured-treasure") {
+    handleGetFeaturedTreasure(req, res).catch((error) => {
+      console.error("get-featured-treasure: unexpected failure:", error);
+      if (!res.headersSent) {
+        sendJson(res, 500, { error: "Could not read Featured Treasure data." });
+      } else {
+        res.end();
+      }
+    });
+    return;
+  }
+
+  if (requestPath === "/.netlify/functions/update-featured-treasure") {
+    handleUpdateFeaturedTreasure(req, res).catch((error) => {
+      console.error("update-featured-treasure: unexpected failure:", error);
+      if (!res.headersSent) {
+        sendPrivateApiJson(res, 500, { error: "Featured Treasure could not be saved." });
+      } else {
+        res.end();
+      }
+    });
+    return;
+  }
+
+  if (requestPath === "/.netlify/functions/get-desk-entries") {
+    handleGetDeskEntries(req, res).catch((error) => {
+      console.error("get-desk-entries: unexpected failure:", error);
+      if (!res.headersSent) {
+        sendJson(res, 500, { error: "Could not read desk entries data." });
+      } else {
+        res.end();
+      }
+    });
+    return;
+  }
+
+  if (requestPath === "/.netlify/functions/update-desk-entries") {
+    handleUpdateDeskEntries(req, res).catch((error) => {
+      console.error("update-desk-entries: unexpected failure:", error);
+      if (!res.headersSent) {
+        sendPrivateApiJson(res, 500, { error: "Journal entries could not be saved." });
+      } else {
+        res.end();
+      }
+    });
+    return;
+  }
+
+  if (requestPath === "/.netlify/functions/promote-merchant") {
+    handlePromoteMerchant(req, res).catch((error) => {
+      console.error("promote-merchant: unexpected failure:", error);
+      if (!res.headersSent) {
+        sendJson(res, 500, { error: "Merchant promotion could not be completed right now. Please try again." });
+      } else {
+        res.end();
+      }
+    });
+    return;
+  }
+
+  if (requestPath === "/.netlify/functions/stripe-webhook") {
+    handleStripeWebhook(req, res).catch((error) => {
+      console.error("stripe-webhook: unexpected failure:", error);
+      if (!res.headersSent) {
+        res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+        res.end("Inventory update failed. Please retry webhook delivery.");
       } else {
         res.end();
       }
