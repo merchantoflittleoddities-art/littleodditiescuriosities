@@ -5,6 +5,7 @@ const pool = require("./db");
 const crypto = require("crypto");
 const {
   hashPassword,
+  verifyPassword,
   createToken,
   normaliseEmail
 } = require("./netlify/functions/_customer-lib");
@@ -140,6 +141,71 @@ async function handleCustomerRegister(req, res) {
   }
 }
 
+async function handleCustomerLogin(req, res) {
+  if (req.method !== "POST") {
+    sendJson(res, 405, { error: "Method not allowed." });
+    return;
+  }
+
+  let bodyText;
+  try {
+    bodyText = await readRequestBody(req);
+  } catch {
+    sendJson(res, 400, { error: "Invalid request body." });
+    return;
+  }
+
+  let email;
+  let password;
+  try {
+    ({ email, password } = JSON.parse(bodyText));
+  } catch {
+    sendJson(res, 400, { error: "Invalid request body." });
+    return;
+  }
+
+  const key = normaliseEmail(email);
+  if (!key || !password) {
+    sendJson(res, 400, {
+      error: "Email address and Traveller password are required."
+    });
+    return;
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT id, name, email, role, password_hash, salt
+      FROM customers
+      WHERE email = $1
+      LIMIT 1`,
+      [key]
+    );
+
+    const customer = result.rows[0] || null;
+
+    if (!customer || !verifyPassword(password, customer.salt, customer.password_hash)) {
+      sendJson(res, 401, {
+        error: "That email address and Traveller password do not match our records."
+      });
+      return;
+    }
+
+    const token = createToken(customer.id);
+    sendJson(res, 200, {
+      token,
+      customer: {
+        id: customer.id,
+        name: customer.name,
+        email: customer.email,
+        role: customer.role || "traveller"
+      }
+    });
+  } catch (error) {
+    console.error("customer-login: failed to authenticate customer:", error);
+    sendJson(res, 500, { error: "Unable to sign in right now." });
+  }
+}
+
 const server = http.createServer((req, res) => {
   let requestPath;
   try {
@@ -155,6 +221,18 @@ const server = http.createServer((req, res) => {
       console.error("customer-register: unexpected failure:", error);
       if (!res.headersSent) {
         sendJson(res, 500, { error: "Unable to create Traveller account right now." });
+      } else {
+        res.end();
+      }
+    });
+    return;
+  }
+
+  if (requestPath === "/.netlify/functions/customer-login") {
+    handleCustomerLogin(req, res).catch((error) => {
+      console.error("customer-login: unexpected failure:", error);
+      if (!res.headersSent) {
+        sendJson(res, 500, { error: "Unable to sign in right now." });
       } else {
         res.end();
       }
