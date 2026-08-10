@@ -7,6 +7,8 @@ const {
   hashPassword,
   verifyPassword,
   createToken,
+  verifyToken,
+  getBearerToken,
   normaliseEmail
 } = require("./netlify/functions/_customer-lib");
 
@@ -47,6 +49,203 @@ function isDuplicateEmailError(error) {
     error?.constraint === "customers_email_key" ||
     String(error?.detail || "").includes("(email)=(")
   );
+}
+
+function isProfileWriteStateError(error) {
+  return error?.code === "40001" || error?.code === "40P01";
+}
+
+function getTokenIssuedAtMs(token) {
+  const parts = String(token || "").split(".");
+  if (parts.length !== 3) return null;
+
+  const issuedAtMs = parseInt(parts[1], 10);
+  return Number.isFinite(issuedAtMs) ? issuedAtMs : null;
+}
+
+function toProfileCustomer(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    role: row.role || "traveller",
+    notificationPrefs: row.notification_prefs || { orderUpdates: true }
+  };
+}
+
+async function authenticateProfileRequest(req) {
+  const token = getBearerToken({ headers: req.headers || {} });
+  const customerId = verifyToken(token);
+
+  if (!customerId) {
+    return { ok: false, statusCode: 401 };
+  }
+
+  const tokenIssuedAtMs = getTokenIssuedAtMs(token);
+  if (!Number.isFinite(tokenIssuedAtMs)) {
+    return { ok: false, statusCode: 401 };
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT id, name, email, role, notification_prefs, token_revoked_after_ms
+      FROM customers
+      WHERE id = $1
+      LIMIT 1`,
+      [customerId]
+    );
+
+    const customer = result.rows[0] || null;
+    if (!customer) {
+      return { ok: false, statusCode: 401 };
+    }
+
+    const cutoff = Number(customer.token_revoked_after_ms);
+    if (Number.isFinite(cutoff) && cutoff > 0 && tokenIssuedAtMs <= cutoff) {
+      return { ok: false, statusCode: 401 };
+    }
+
+    return { ok: true, customerId, tokenIssuedAtMs, customer };
+  } catch (error) {
+    console.error("customer-profile: failed to load customer during authentication:", error);
+    return { ok: false, statusCode: 503 };
+  }
+}
+
+async function handleCustomerProfile(req, res) {
+  if (req.method !== "GET" && req.method !== "POST") {
+    sendJson(res, 405, { error: "Method not allowed." });
+    return;
+  }
+
+  const auth = await authenticateProfileRequest(req);
+  if (!auth.ok) {
+    if (auth.statusCode === 503) {
+      sendJson(res, 503, {
+        error: "Authentication state could not be verified. Please try again."
+      });
+      return;
+    }
+
+    sendJson(res, 401, { error: "Please sign in again." });
+    return;
+  }
+
+  if (req.method === "GET") {
+    sendJson(res, 200, { customer: toProfileCustomer(auth.customer) });
+    return;
+  }
+
+  let bodyText;
+  try {
+    bodyText = await readRequestBody(req);
+  } catch {
+    sendJson(res, 400, { error: "Invalid request body." });
+    return;
+  }
+
+  let body;
+  try {
+    body = JSON.parse(bodyText);
+  } catch {
+    sendJson(res, 400, { error: "Invalid request body." });
+    return;
+  }
+
+  const { name, email, password, notificationPrefs } = body;
+
+  let nextName = null;
+  if (name !== undefined) {
+    const trimmed = String(name).trim();
+    if (!trimmed) {
+      sendJson(res, 400, { error: "Traveller Name cannot be empty." });
+      return;
+    }
+    nextName = trimmed;
+  }
+
+  let nextEmail = null;
+  if (email !== undefined) {
+    nextEmail = normaliseEmail(email);
+    if (!nextEmail) {
+      sendJson(res, 400, { error: "Please provide a valid email address." });
+      return;
+    }
+  }
+
+  let nextHash = null;
+  let nextSalt = null;
+  if (password !== undefined) {
+    if (String(password).length < 8) {
+      sendJson(res, 400, { error: "Traveller password must be at least 8 characters." });
+      return;
+    }
+
+    const passwordUpdate = hashPassword(password);
+    nextHash = passwordUpdate.hash;
+    nextSalt = passwordUpdate.salt;
+  }
+
+  let notificationPrefsPatch = null;
+  if (notificationPrefs !== undefined && typeof notificationPrefs === "object") {
+    notificationPrefsPatch = { ...(notificationPrefs || {}) };
+  }
+
+  const shouldMergeNotificationPrefs = notificationPrefsPatch !== null;
+
+  try {
+    const update = await pool.query(
+      `UPDATE customers
+      SET
+        name = COALESCE($2, name),
+        email = COALESCE($3, email),
+        password_hash = COALESCE($4, password_hash),
+        salt = COALESCE($5, salt),
+        notification_prefs = CASE
+          WHEN $6::boolean
+            THEN COALESCE(notification_prefs, '{}'::jsonb) || $7::jsonb
+          ELSE notification_prefs
+        END
+      WHERE id = $1
+      RETURNING id, name, email, role, notification_prefs`,
+      [
+        auth.customerId,
+        nextName,
+        nextEmail,
+        nextHash,
+        nextSalt,
+        shouldMergeNotificationPrefs,
+        JSON.stringify(notificationPrefsPatch || {})
+      ]
+    );
+
+    const updatedCustomer = update.rows[0] || null;
+    if (!updatedCustomer) {
+      sendJson(res, 401, { error: "Please sign in again." });
+      return;
+    }
+
+    sendJson(res, 200, { customer: toProfileCustomer(updatedCustomer) });
+  } catch (error) {
+    if (isDuplicateEmailError(error)) {
+      sendJson(res, 409, {
+        error: "Another Traveller already uses that email address."
+      });
+      return;
+    }
+
+    if (isProfileWriteStateError(error)) {
+      sendJson(res, 503, {
+        error: "Your Preferences could not be saved right now. Please try again."
+      });
+      return;
+    }
+
+    console.error("customer-profile: failed to update customer:", error);
+    sendJson(res, 500, {
+      error: "Something went wrong. Please try again."
+    });
+  }
 }
 
 async function handleCustomerRegister(req, res) {
@@ -233,6 +432,18 @@ const server = http.createServer((req, res) => {
       console.error("customer-login: unexpected failure:", error);
       if (!res.headersSent) {
         sendJson(res, 500, { error: "Unable to sign in right now." });
+      } else {
+        res.end();
+      }
+    });
+    return;
+  }
+
+  if (requestPath === "/.netlify/functions/customer-profile") {
+    handleCustomerProfile(req, res).catch((error) => {
+      console.error("customer-profile: unexpected failure:", error);
+      if (!res.headersSent) {
+        sendJson(res, 500, { error: "Something went wrong. Please try again." });
       } else {
         res.end();
       }
