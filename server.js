@@ -1308,6 +1308,16 @@ async function handleCreateCheckoutSession(req, res) {
     sendJson(res, 200, { url: session.url });
   } catch (error) {
     console.error("Stripe error:", error.message);
+    if (error && (error.type === "StripeAuthenticationError" || /api key/i.test(String(error.message || "")))) {
+      sendJson(res, 500, { error: "Stripe authentication failed. Check STRIPE_SECRET_KEY." });
+      return;
+    }
+
+    if (error && error.type === "StripeInvalidRequestError") {
+      sendJson(res, 500, { error: "Stripe rejected the checkout request. Please verify payment configuration." });
+      return;
+    }
+
     sendJson(res, 500, { error: "Payment session could not be created. Please try again." });
   }
 }
