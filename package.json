@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Little Oddities Curiosities — handmade bracelet shop",
   "private": true,
+  "scripts": {
+    "start": "node server.js"
+  },
   "dependencies": {
     "stripe": "^14.0.0",
     "@netlify/blobs": "^7.0.0"
