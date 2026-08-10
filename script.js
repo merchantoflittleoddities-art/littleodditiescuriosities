@@ -2147,9 +2147,13 @@ function getCustomerInfo() {
 
 /** Stores the session token + customer info; remember=true persists across browser restarts */
 function saveCustomerSession(token, customer, remember) {
-  const store = remember ? window.localStorage : window.sessionStorage;
-  store.setItem(CUSTOMER_TOKEN_KEY, token);
-  store.setItem(CUSTOMER_INFO_KEY, JSON.stringify(customer));
+  const selectedStore = remember ? window.localStorage : window.sessionStorage;
+  const otherStore = remember ? window.sessionStorage : window.localStorage;
+
+  otherStore.removeItem(CUSTOMER_TOKEN_KEY);
+  otherStore.removeItem(CUSTOMER_INFO_KEY);
+  selectedStore.setItem(CUSTOMER_TOKEN_KEY, token);
+  selectedStore.setItem(CUSTOMER_INFO_KEY, JSON.stringify(customer));
 }
 
 function clearCustomerSession() {
