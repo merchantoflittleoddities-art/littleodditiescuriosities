@@ -529,7 +529,7 @@ async function loadSettings() {
  */
 async function loadInventory() {
   try {
-    const response = await fetch(INVENTORY_URL, { cache: "no-store" });
+    const response = await fetch(`${INVENTORY_URL}?cb=${Date.now()}`, { cache: "no-store" });
     if (!response.ok) throw new Error("Inventory could not be loaded.");
     const payload = await response.json();
     const inventory = payload?.inventory;
@@ -627,7 +627,7 @@ function getStorefrontMessage(productId) {
     const msgFn = AVAILABLE_STOREFRONT_MESSAGES[key] || AVAILABLE_STOREFRONT_MESSAGES.shelves;
     return msgFn(inv?.stock);
   } else {
-    const key = inv?.unavailableStorefrontMessage || inv?.unavailableMessage || (inv?.storefrontMessage in UNAVAILABLE_STOREFRONT_MESSAGES ? inv?.storefrontMessage : "roaming");
+    const key = inv?.unavailableStorefrontMessage || inv?.unavailableMessage || inv?.outOfStockMessage || (inv?.storefrontMessage in UNAVAILABLE_STOREFRONT_MESSAGES ? inv?.storefrontMessage : "roaming");
     const msgFn = UNAVAILABLE_STOREFRONT_MESSAGES[key] || UNAVAILABLE_STOREFRONT_MESSAGES.roaming;
     return msgFn(inv?.stock);
   }

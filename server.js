@@ -47,8 +47,28 @@ const PRIVATE_API_NO_STORE_HEADERS = {
   "Vary": "Authorization, Cookie"
 };
 
+const LOGOUT_CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  "Access-Control-Allow-Methods": "POST, OPTIONS"
+};
+
+const STRIPE_WEBHOOK_MAX_CONFLICT_RETRIES = 5;
+const STRIPE_WEBHOOK_BASE_RETRY_DELAY_MS = 25;
+const STRIPE_WEBHOOK_JITTER_RETRY_DELAY_MS = 30;
+
 function sendPrivateApiJson(res, statusCode, payload) {
   sendJson(res, statusCode, payload, PRIVATE_API_NO_STORE_HEADERS);
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function nextWebhookRetryDelay(attempt) {
+  const exponential = STRIPE_WEBHOOK_BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1);
+  const jitter = Math.floor(Math.random() * STRIPE_WEBHOOK_JITTER_RETRY_DELAY_MS);
+  return exponential + jitter;
 }
 
 async function readRequestBody(req) {
@@ -163,12 +183,18 @@ function getAllowedRedirectOrigins() {
 
 function getRedirectOrigin(req) {
   const allowedOrigins = getAllowedRedirectOrigins();
-  if (!allowedOrigins.length) {
-    return null;
-  }
-
   const requestOrigin = normalizeOrigin(getHeader(req.headers, "origin"))
     || normalizeOrigin(getHeader(req.headers, "referer"));
+
+  if (!allowedOrigins.length) {
+    if (requestOrigin) {
+      return requestOrigin;
+    }
+
+    const host = getHeader(req.headers, "x-forwarded-host") || getHeader(req.headers, "host");
+    const proto = getHeader(req.headers, "x-forwarded-proto") || "https";
+    return host ? normalizeOrigin(`${proto}://${host}`) : null;
+  }
 
   if (!requestOrigin) {
     return allowedOrigins[0];
@@ -261,8 +287,35 @@ function getDashboardBearerToken(req) {
   return authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
 }
 
+function getRuntimeEnvValue(names) {
+  for (const name of names) {
+    const value = process.env[name];
+    if (typeof value === "string" && value.trim()) {
+      return value;
+    }
+  }
+
+  return "";
+}
+
+function getDashboardPassword() {
+  return getRuntimeEnvValue([
+    "DASHBOARD_PASSWORD",
+    "MERCHANT_DASHBOARD_PASSWORD",
+    "G7CLOUD_DASHBOARD_PASSWORD"
+  ]);
+}
+
+function getDashboardSecret() {
+  return getRuntimeEnvValue([
+    "DASHBOARD_SECRET",
+    "MERCHANT_DASHBOARD_SECRET",
+    "G7CLOUD_DASHBOARD_SECRET"
+  ]);
+}
+
 function verifyDashboardToken(token) {
-  const secret = process.env.DASHBOARD_SECRET;
+  const secret = getDashboardSecret();
   if (!token || !secret) return false;
 
   const dotIndex = token.lastIndexOf(".");
@@ -295,6 +348,73 @@ function defaultInventoryEntry(productId) {
     unavailableStorefrontMessage: "roaming",
     lastUpdated: Date.now()
   };
+}
+
+function parseStoredJsonObject(value, fallback) {
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return fallback;
+    }
+  }
+
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return fallback;
+  }
+
+  return value;
+}
+
+function normalizeInventoryEntry(productId, entry) {
+  const source = parseStoredJsonObject(entry, {});
+  const normalized = {
+    ...defaultInventoryEntry(productId),
+    ...source,
+    productId: source.productId || productId,
+    lowStockThreshold: Math.max(0, Number(source.lowStockThreshold ?? 3) || 0),
+    available: source.available !== false,
+    lastUpdated: Number.isFinite(Number(source.lastUpdated)) ? Number(source.lastUpdated) : Date.now()
+  };
+
+  if (source.stock === null) {
+    normalized.stock = null;
+  } else {
+    const stock = Number(source.stock);
+    normalized.stock = Number.isFinite(stock) ? Math.max(0, stock) : null;
+  }
+
+  normalized.availableStorefrontMessage = String(
+    source.availableStorefrontMessage ||
+    source.availableMessage ||
+    "shelves"
+  );
+
+  normalized.unavailableStorefrontMessage = String(
+    source.unavailableStorefrontMessage ||
+    source.unavailableMessage ||
+    source.outOfStockMessage ||
+    "roaming"
+  );
+
+  normalized.outOfStockMessage = normalized.unavailableStorefrontMessage;
+
+  delete normalized.storefrontMessage;
+  delete normalized.availableMessage;
+  delete normalized.unavailableMessage;
+
+  return normalized;
+}
+
+function normalizeInventoryDocument(value) {
+  const source = parseStoredJsonObject(value, {});
+  const normalized = {};
+
+  Object.entries(source).forEach(([productId, entry]) => {
+    normalized[productId] = normalizeInventoryEntry(productId, entry);
+  });
+
+  return normalized;
 }
 
 function getTokenIssuedAtMs(token) {
@@ -475,7 +595,7 @@ async function handleCustomerProfile(req, res) {
 
     const updatedCustomer = update.rows[0] || null;
     if (!updatedCustomer) {
-      sendPrivateApiJson(res, 401, { error: "Please sign in again." });
+      sendPrivateApiJson(res, 404, { error: "That Traveller could no longer be found." });
       return;
     }
 
@@ -569,21 +689,36 @@ async function handleCustomerWishlist(req, res) {
 }
 
 async function handleCustomerLogout(req, res) {
+  if (req.method === "OPTIONS") {
+    res.writeHead(204, LOGOUT_CORS_HEADERS);
+    res.end();
+    return;
+  }
+
   if (req.method !== "POST") {
-    sendPrivateApiJson(res, 405, { error: "Method not allowed." });
+    sendJson(res, 405, { error: "Method not allowed." }, {
+      ...PRIVATE_API_NO_STORE_HEADERS,
+      ...LOGOUT_CORS_HEADERS
+    });
     return;
   }
 
   const auth = await authenticateProfileRequest(req);
   if (!auth.ok) {
     if (auth.statusCode === 503) {
-      sendPrivateApiJson(res, 503, {
+      sendJson(res, 503, {
         error: "Authentication state could not be verified. Please try again."
+      }, {
+        ...PRIVATE_API_NO_STORE_HEADERS,
+        ...LOGOUT_CORS_HEADERS
       });
       return;
     }
 
-    sendPrivateApiJson(res, 401, { error: "Please sign in again." });
+    sendJson(res, 401, { error: "Please sign in again." }, {
+      ...PRIVATE_API_NO_STORE_HEADERS,
+      ...LOGOUT_CORS_HEADERS
+    });
     return;
   }
 
@@ -599,15 +734,24 @@ async function handleCustomerLogout(req, res) {
     );
 
     if (!update.rows[0]) {
-      sendPrivateApiJson(res, 401, { error: "Please sign in again." });
+      sendJson(res, 401, { error: "Please sign in again." }, {
+        ...PRIVATE_API_NO_STORE_HEADERS,
+        ...LOGOUT_CORS_HEADERS
+      });
       return;
     }
 
-    sendPrivateApiJson(res, 200, { ok: true });
+    sendJson(res, 200, { ok: true }, {
+      ...PRIVATE_API_NO_STORE_HEADERS,
+      ...LOGOUT_CORS_HEADERS
+    });
   } catch (error) {
     console.error("customer-logout: failed to persist token revocation:", error);
-    sendPrivateApiJson(res, 503, {
+    sendJson(res, 503, {
       error: "Could not persist logout state. Please try again."
+    }, {
+      ...PRIVATE_API_NO_STORE_HEADERS,
+      ...LOGOUT_CORS_HEADERS
     });
   }
 }
@@ -634,13 +778,13 @@ async function handleDashboardLogin(req, res) {
     return;
   }
 
-  const correctPassword = process.env.DASHBOARD_PASSWORD;
-  const secret = process.env.DASHBOARD_SECRET;
+  const correctPassword = getDashboardPassword();
+  const secret = getDashboardSecret();
 
   if (!correctPassword || !secret) {
-    console.error("dashboard-login: DASHBOARD_PASSWORD or DASHBOARD_SECRET not set.");
+    console.error("dashboard-login: dashboard credentials are not configured in the runtime environment.");
     sendJson(res, 500, {
-      error: "Dashboard is not yet configured. Please set DASHBOARD_PASSWORD and DASHBOARD_SECRET in your Netlify environment variables."
+      error: "Dashboard is not yet configured. Please set DASHBOARD_PASSWORD and DASHBOARD_SECRET in the runtime environment."
     });
     return;
   }
@@ -675,12 +819,7 @@ async function loadInventoryDocument(client = pool) {
     LIMIT 1`
   );
 
-  const inventory = result.rows[0]?.inventory || {};
-  if (typeof inventory !== "object" || inventory === null || Array.isArray(inventory)) {
-    throw new Error("Inventory payload is malformed.");
-  }
-
-  return inventory;
+  return normalizeInventoryDocument(result.rows[0]?.inventory || {});
 }
 
 async function handleGetInventory(req, res) {
@@ -745,7 +884,7 @@ async function handleUpdateInventory(req, res) {
       FOR UPDATE`
     );
 
-    const inventory = locked.rows[0]?.inventory || {};
+    const inventory = normalizeInventoryDocument(locked.rows[0]?.inventory || {});
 
     if (action === "bulkRestock") {
       const amount = Math.max(0, Number(value) || 0);
@@ -1621,84 +1760,112 @@ async function handleStripeWebhook(req, res) {
     return;
   }
 
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
+  const paymentRef = {
+    stripeEventId: stripeEvent.id,
+    stripeEventType: stripeEvent.type,
+    checkoutSessionId: session.id || null,
+    paymentIntentId: session.payment_intent || null,
+    customerEmail: session.customer_details?.email || session.customer_email || null,
+    orderItems
+  };
 
-    const locked = await client.query(
-      `SELECT inventory
-      FROM inventory_state
-      WHERE id = 'all'
-      FOR UPDATE`
-    );
+  for (let attempt = 1; attempt <= STRIPE_WEBHOOK_MAX_CONFLICT_RETRIES; attempt += 1) {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
 
-    const inventory = locked.rows[0]?.inventory || {};
-    if (typeof inventory !== "object" || inventory === null || Array.isArray(inventory)) {
-      throw new Error("Inventory payload is malformed.");
-    }
+      const locked = await client.query(
+        `SELECT inventory
+        FROM inventory_state
+        WHERE id = 'all'
+        FOR UPDATE`
+      );
 
-    const shortages = [];
-    for (const { id, qty } of orderItems) {
-      const item = inventory[id];
-      if (!item || item.stock === null) continue;
+      const inventory = normalizeInventoryDocument(locked.rows[0]?.inventory || {});
 
-      const stock = Number(item.stock);
-      if (!Number.isFinite(stock) || item.available === false || stock < qty) {
-        shortages.push({
-          productId: id,
-          requestedQty: qty,
-          availableStock: Number.isFinite(stock) ? stock : null,
-          availableFlag: item.available
-        });
+      const shortages = [];
+      for (const { id, qty } of orderItems) {
+        const item = inventory[id];
+        if (!item || item.stock === null) continue;
+
+        const stock = Number(item.stock);
+        if (!Number.isFinite(stock) || item.available === false || stock < qty) {
+          shortages.push({
+            productId: id,
+            requestedQty: qty,
+            availableStock: Number.isFinite(stock) ? stock : null,
+            availableFlag: item.available
+          });
+        }
       }
-    }
 
-    if (shortages.length) {
-      await client.query("ROLLBACK");
-      console.error("stripe-webhook: manual intervention required - insufficient stock after payment", {
-        stripeEventId: stripeEvent.id,
-        checkoutSessionId: session.id || null,
-        paymentIntentId: session.payment_intent || null,
-        orderItems,
-        shortages
+      if (shortages.length) {
+        await client.query("ROLLBACK");
+        console.error("stripe-webhook: manual intervention required - insufficient stock after payment", {
+          ...paymentRef,
+          shortages
+        });
+
+        res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
+        res.end("Insufficient stock after payment; manual intervention required.");
+        return;
+      }
+
+      const now = Date.now();
+      for (const { id, qty } of orderItems) {
+        const item = inventory[id];
+        if (!item || item.stock === null) continue;
+        item.stock = Number(item.stock) - qty;
+        item.lastUpdated = now;
+      }
+
+      await client.query(
+        `INSERT INTO inventory_state (id, inventory)
+        VALUES ('all', $1::jsonb)
+        ON CONFLICT (id)
+        DO UPDATE SET inventory = EXCLUDED.inventory`,
+        [JSON.stringify(inventory)]
+      );
+
+      await client.query("COMMIT");
+      console.log("stripe-webhook: stock updated after payment", {
+        ...paymentRef,
+        conflictRetries: attempt - 1
       });
 
       res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
-      res.end("Insufficient stock after payment; manual intervention required.");
+      res.end("Stock updated.");
       return;
+    } catch (error) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {
+        // Ignore rollback failures so original error is reported.
+      }
+
+      const retryable = error?.code === "40001" || error?.code === "40P01";
+      if (retryable && attempt < STRIPE_WEBHOOK_MAX_CONFLICT_RETRIES) {
+        await delay(nextWebhookRetryDelay(attempt));
+        continue;
+      }
+
+      if (retryable && attempt >= STRIPE_WEBHOOK_MAX_CONFLICT_RETRIES) {
+        console.error("stripe-webhook: inventory update conflicted too many times; retry required", {
+          ...paymentRef,
+          maxRetries: STRIPE_WEBHOOK_MAX_CONFLICT_RETRIES
+        });
+        res.writeHead(503, { "Content-Type": "text/plain; charset=utf-8" });
+        res.end("Inventory update conflict; please retry webhook delivery.");
+        return;
+      }
+
+      console.error("stripe-webhook: failed to update inventory:", error.message);
+      res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end("Inventory update failed. Please retry webhook delivery.");
+      return;
+    } finally {
+      client.release();
     }
-
-    const now = Date.now();
-    for (const { id, qty } of orderItems) {
-      const item = inventory[id];
-      if (!item || item.stock === null) continue;
-      item.stock = Number(item.stock) - qty;
-      item.lastUpdated = now;
-    }
-
-    await client.query(
-      `INSERT INTO inventory_state (id, inventory)
-      VALUES ('all', $1::jsonb)
-      ON CONFLICT (id)
-      DO UPDATE SET inventory = EXCLUDED.inventory`,
-      [JSON.stringify(inventory)]
-    );
-
-    await client.query("COMMIT");
-    res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
-    res.end("Stock updated.");
-  } catch (error) {
-    try {
-      await client.query("ROLLBACK");
-    } catch {
-      // Ignore rollback failures so original error is reported.
-    }
-
-    console.error("stripe-webhook: failed to update inventory:", error.message);
-    res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
-    res.end("Inventory update failed. Please retry webhook delivery.");
-  } finally {
-    client.release();
   }
 }
 
@@ -2088,8 +2255,11 @@ const server = http.createServer((req, res) => {
     handleCustomerLogout(req, res).catch((error) => {
       console.error("customer-logout: unexpected failure:", error);
       if (!res.headersSent) {
-        sendPrivateApiJson(res, 503, {
+        sendJson(res, 503, {
           error: "Could not persist logout state. Please try again."
+        }, {
+          ...PRIVATE_API_NO_STORE_HEADERS,
+          ...LOGOUT_CORS_HEADERS
         });
       } else {
         res.end();
@@ -2144,7 +2314,7 @@ const server = http.createServer((req, res) => {
       console.error("dashboard-login: unexpected failure:", error);
       if (!res.headersSent) {
         sendJson(res, 500, {
-          error: "Dashboard is not yet configured. Please set DASHBOARD_PASSWORD and DASHBOARD_SECRET in your Netlify environment variables."
+          error: "Dashboard is not yet configured. Please set DASHBOARD_PASSWORD and DASHBOARD_SECRET in the runtime environment."
         });
       } else {
         res.end();

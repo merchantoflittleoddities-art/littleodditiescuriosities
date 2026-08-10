@@ -40,8 +40,14 @@ function hideFieldError(el) {
 
 async function authFetch(url, options = {}) {
   const token = getCustomerToken();
-  const response = await fetch(url, {
+  const method = String(options.method || "GET").toUpperCase();
+  const requestUrl = (method === "GET" || method === "HEAD")
+    ? `${url}${url.includes("?") ? "&" : "?"}cb=${Date.now()}`
+    : url;
+  const effectiveResponse = await fetch(requestUrl, {
+    cache: "no-store",
     ...options,
+    method,
     headers: {
       "Content-Type": "application/json",
       ...(token ? { "Authorization": `Bearer ${token}` } : {}),
@@ -49,14 +55,14 @@ async function authFetch(url, options = {}) {
     }
   });
 
-  if (response.status === 401) {
+  if (effectiveResponse.status === 401) {
     clearCustomerSession();
     window.location.href = "signin.html";
     throw new Error("Please sign in again.");
   }
 
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
+  const data = await effectiveResponse.json().catch(() => ({}));
+  if (!effectiveResponse.ok) {
     throw new Error(data.error || "Something went wrong. Please try again.");
   }
   return data;
@@ -248,6 +254,9 @@ async function initAccountHub() {
     }
 
     const profile = await authFetch(PROFILE_URL);
+    const remember = Boolean(window.localStorage.getItem("lo_customer_token"));
+    saveCustomerSession(token, profile.customer, remember);
+    updateAccountNavLink();
 
     loadingState.classList.add("hidden");
     hub.classList.remove("hidden");
@@ -266,6 +275,7 @@ async function initAccountHub() {
         const token = getCustomerToken();
         const response = await fetch(CUSTOMER_LOGOUT_URL, {
           method: "POST",
+          cache: "no-store",
           headers: {
             "Content-Type": "application/json",
             ...(token ? { "Authorization": `Bearer ${token}` } : {})

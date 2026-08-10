@@ -91,7 +91,14 @@ async function login(password) {
     body:    JSON.stringify({ password })
   });
   const data = await response.json();
-  if (!response.ok) throw new Error(data.error || "Login failed.");
+  if (!response.ok) {
+    const message = String(data.error || "Login failed.")
+      .replace(
+        "Please set DASHBOARD_PASSWORD and DASHBOARD_SECRET in your Netlify environment variables.",
+        "Please set DASHBOARD_PASSWORD and DASHBOARD_SECRET in the G7Cloud runtime environment."
+      );
+    throw new Error(message);
+  }
   return data.token;
 }
 
@@ -486,9 +493,12 @@ const UNAVAILABLE_STOREFRONT_MESSAGES = {
 };
 
 async function fetchInventory() {
-  const response = await fetch(INVENTORY_URL, { cache: "no-store" });
+  const response = await fetch(`${INVENTORY_URL}?cb=${Date.now()}`, { cache: "no-store" });
   if (!response.ok) throw new Error("Supplies could not be loaded.");
   const { inventory } = await response.json();
+  if (typeof inventory !== "object" || inventory === null || Array.isArray(inventory)) {
+    throw new Error("Supplies response was malformed.");
+  }
   allInventory = inventory || {};
   return allInventory;
 }
@@ -601,7 +611,7 @@ function renderInventoryTable(products, inventory, query = "", statusFilter = ""
     const avail   = inv.available !== false;
 
     const availMsgKey = inv.availableStorefrontMessage || inv.availableMessage || (inv.storefrontMessage in AVAILABLE_STOREFRONT_MESSAGES ? inv.storefrontMessage : "shelves");
-    const unavailMsgKey = inv.unavailableStorefrontMessage || inv.unavailableMessage || (inv.storefrontMessage in UNAVAILABLE_STOREFRONT_MESSAGES ? inv.storefrontMessage : "roaming");
+    const unavailMsgKey = inv.unavailableStorefrontMessage || inv.unavailableMessage || inv.outOfStockMessage || (inv.storefrontMessage in UNAVAILABLE_STOREFRONT_MESSAGES ? inv.storefrontMessage : "roaming");
 
     const hasImage = Array.isArray(product.images) && product.images.length;
     const imgHtml  = hasImage
@@ -695,7 +705,7 @@ function exportInventoryCSV(products, inventory) {
     const inv = inventory[p.id] || {};
     const status = resolveStockStatus(p.id);
     const availMsgKey = inv.availableStorefrontMessage || inv.availableMessage || (inv.storefrontMessage in AVAILABLE_STOREFRONT_MESSAGES ? inv.storefrontMessage : "shelves");
-    const unavailMsgKey = inv.unavailableStorefrontMessage || inv.unavailableMessage || (inv.storefrontMessage in UNAVAILABLE_STOREFRONT_MESSAGES ? inv.storefrontMessage : "roaming");
+    const unavailMsgKey = inv.unavailableStorefrontMessage || inv.unavailableMessage || inv.outOfStockMessage || (inv.storefrontMessage in UNAVAILABLE_STOREFRONT_MESSAGES ? inv.storefrontMessage : "roaming");
 
     const availLabel = AVAILABLE_STOREFRONT_MESSAGES[availMsgKey] || "The Merchant has this upon the shelves.";
     const unavailLabel = UNAVAILABLE_STOREFRONT_MESSAGES[unavailMsgKey] || "Roaming the Land.";
@@ -726,6 +736,9 @@ function exportInventoryCSV(products, inventory) {
 }
 
 async function loadAndRenderInventory() {
+  const countEl = document.getElementById("inv-count");
+  const tbody = document.getElementById("inventory-tbody");
+
   try {
     await Promise.all([
       fetchInventory(),
@@ -735,6 +748,16 @@ async function loadAndRenderInventory() {
     renderInventoryStats(allProducts, allInventory);
   } catch (error) {
     console.error("Inventory load error:", error.message);
+    if (countEl) {
+      countEl.textContent = "Inventory could not be verified right now.";
+    }
+    if (tbody) {
+      tbody.innerHTML = `
+        <tr><td colspan="7" style="text-align:center;padding:3rem;color:var(--text-muted);font-style:italic;">
+          Inventory could not be verified right now. Please try again shortly.
+        </td></tr>`;
+    }
+    showToast(error.message || "Supplies could not be loaded.");
   }
 }
 
