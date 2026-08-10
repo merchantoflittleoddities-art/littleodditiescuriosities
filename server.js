@@ -112,6 +112,18 @@ async function authenticateProfileRequest(req) {
   }
 }
 
+async function loadCustomerWishlistProductIds(customerId) {
+  const result = await pool.query(
+    `SELECT product_id
+    FROM customer_wishlist
+    WHERE customer_id = $1
+    ORDER BY created_at ASC, product_id ASC`,
+    [customerId]
+  );
+
+  return result.rows.map((row) => row.product_id);
+}
+
 async function handleCustomerProfile(req, res) {
   if (req.method !== "GET" && req.method !== "POST") {
     sendJson(res, 405, { error: "Method not allowed." });
@@ -246,6 +258,72 @@ async function handleCustomerProfile(req, res) {
       error: "Something went wrong. Please try again."
     });
   }
+}
+
+async function handleCustomerWishlist(req, res) {
+  if (req.method !== "GET" && req.method !== "POST" && req.method !== "DELETE") {
+    sendJson(res, 405, { error: "Method not allowed." });
+    return;
+  }
+
+  const auth = await authenticateProfileRequest(req);
+  if (!auth.ok) {
+    if (auth.statusCode === 503) {
+      sendJson(res, 503, {
+        error: "Authentication state could not be verified. Please try again."
+      });
+      return;
+    }
+
+    sendJson(res, 401, { error: "Please sign in again." });
+    return;
+  }
+
+  if (req.method === "GET") {
+    const productIds = await loadCustomerWishlistProductIds(auth.customerId);
+    sendJson(res, 200, { productIds });
+    return;
+  }
+
+  let bodyText;
+  try {
+    bodyText = await readRequestBody(req);
+  } catch {
+    sendJson(res, 400, { error: "Invalid request body." });
+    return;
+  }
+
+  let body;
+  try {
+    body = JSON.parse(bodyText);
+  } catch {
+    sendJson(res, 400, { error: "Invalid request body." });
+    return;
+  }
+
+  const { productId } = body;
+  if (!productId) {
+    sendJson(res, 400, { error: "A productId is required." });
+    return;
+  }
+
+  if (req.method === "POST") {
+    await pool.query(
+      `INSERT INTO customer_wishlist (customer_id, product_id)
+      VALUES ($1, $2)
+      ON CONFLICT (customer_id, product_id) DO NOTHING`,
+      [auth.customerId, productId]
+    );
+  } else {
+    await pool.query(
+      `DELETE FROM customer_wishlist
+      WHERE customer_id = $1 AND product_id = $2`,
+      [auth.customerId, productId]
+    );
+  }
+
+  const productIds = await loadCustomerWishlistProductIds(auth.customerId);
+  sendJson(res, 200, { productIds });
 }
 
 async function handleCustomerRegister(req, res) {
@@ -442,6 +520,18 @@ const server = http.createServer((req, res) => {
   if (requestPath === "/.netlify/functions/customer-profile") {
     handleCustomerProfile(req, res).catch((error) => {
       console.error("customer-profile: unexpected failure:", error);
+      if (!res.headersSent) {
+        sendJson(res, 500, { error: "Something went wrong. Please try again." });
+      } else {
+        res.end();
+      }
+    });
+    return;
+  }
+
+  if (requestPath === "/.netlify/functions/customer-wishlist") {
+    handleCustomerWishlist(req, res).catch((error) => {
+      console.error("customer-wishlist: unexpected failure:", error);
       if (!res.headersSent) {
         sendJson(res, 500, { error: "Something went wrong. Please try again." });
       } else {
