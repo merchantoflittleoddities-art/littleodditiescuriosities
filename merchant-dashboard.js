@@ -92,11 +92,15 @@ async function login(password) {
   });
   const data = await response.json();
   if (!response.ok) {
-    const message = String(data.error || "Login failed.")
-      .replace(
-        "Please set DASHBOARD_PASSWORD and DASHBOARD_SECRET in your Netlify environment variables.",
-        "Please set DASHBOARD_PASSWORD and DASHBOARD_SECRET in the G7Cloud runtime environment."
-      );
+    let message = String(data.error || "Login failed.");
+    message = message.replace(
+      "Please set DASHBOARD_PASSWORD and DASHBOARD_SECRET in your Netlify environment variables.",
+      "Please set dashboard credentials in the G7Cloud runtime environment."
+    );
+    message = message.replace(
+      "Please set DASHBOARD_PASSWORD and DASHBOARD_SECRET in the G7Cloud runtime environment.",
+      "Please set dashboard credentials in the G7Cloud runtime environment."
+    );
     throw new Error(message);
   }
   return data.token;
