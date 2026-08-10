@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const pool = require("./db");
 const crypto = require("crypto");
-const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+let stripeClient = null;
 const {
   hashPassword,
   verifyPassword,
@@ -15,6 +15,19 @@ const {
 
 const PORT = process.env.PORT || 3000;
 const ROOT = __dirname;
+
+function getStripeClient() {
+  const key = String(process.env.STRIPE_SECRET_KEY || "").trim();
+  if (!key) {
+    return null;
+  }
+
+  if (!stripeClient) {
+    stripeClient = require("stripe")(key);
+  }
+
+  return stripeClient;
+}
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -1246,6 +1259,12 @@ async function handleCreateCheckoutSession(req, res) {
     return;
   }
 
+  const stripe = getStripeClient();
+  if (!stripe) {
+    sendJson(res, 500, { error: "Stripe is not configured. Missing STRIPE_SECRET_KEY." });
+    return;
+  }
+
   try {
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
@@ -1305,8 +1324,9 @@ async function handleGetOrders(req, res) {
     return;
   }
 
-  if (!process.env.STRIPE_SECRET_KEY) {
-    sendPrivateApiJson(res, 500, { error: "Stripe is not configured." });
+  const stripe = getStripeClient();
+  if (!stripe) {
+    sendPrivateApiJson(res, 500, { error: "Stripe is not configured. Missing STRIPE_SECRET_KEY." });
     return;
   }
 
@@ -1376,8 +1396,9 @@ async function handleCustomerOrders(req, res) {
     return;
   }
 
-  if (!process.env.STRIPE_SECRET_KEY) {
-    sendPrivateApiJson(res, 500, { error: "Stripe is not configured." });
+  const stripe = getStripeClient();
+  if (!stripe) {
+    sendPrivateApiJson(res, 500, { error: "Stripe is not configured. Missing STRIPE_SECRET_KEY." });
     return;
   }
 
@@ -1720,6 +1741,14 @@ async function handleStripeWebhook(req, res) {
   }
 
   const signature = req.headers["stripe-signature"];
+  const stripe = getStripeClient();
+  if (!stripe) {
+    console.error("stripe-webhook: STRIPE_SECRET_KEY not set. Skipping.");
+    res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end("Stripe secret not configured.");
+    return;
+  }
+
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
 
   if (!secret) {
