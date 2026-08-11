@@ -860,13 +860,37 @@ async function handleGetInventory(req, res) {
       "Access-Control-Allow-Origin": "*"
     });
   } catch (error) {
-    console.error("get-inventory error:", error.message);
-    sendJson(res, 503, {
-      error: "Inventory could not be verified. Please try again shortly."
-    }, {
-      "Cache-Control": "no-store",
-      "Access-Control-Allow-Origin": "*"
-    });
+    // Log the full error — not just error.message, which is "" for SSL
+    // connection failures and gives no diagnostic information.
+    console.error("get-inventory error:", error);
+
+    // Graceful fallback: derive a default inventory from the in-memory
+    // catalogue so the customer-facing site remains usable when the DB is
+    // temporarily unreachable.  All products appear available with no
+    // stock limit, which is the safe default the original Netlify Blobs
+    // version also used when no inventory had been saved yet.
+    // This mirrors the fallback pattern in handleGetFeaturedTreasure /
+    // handleGetDeskEntries.
+    try {
+      const fallbackInventory = {};
+      products.forEach((product) => {
+        if (product && product.id) {
+          fallbackInventory[product.id] = defaultInventoryEntry(product.id);
+        }
+      });
+      sendJson(res, 200, { inventory: fallbackInventory }, {
+        "Cache-Control": "no-store",
+        "Access-Control-Allow-Origin": "*"
+      });
+    } catch (fallbackError) {
+      console.error("get-inventory fallback error:", fallbackError);
+      sendJson(res, 503, {
+        error: "Inventory could not be verified. Please try again shortly."
+      }, {
+        "Cache-Control": "no-store",
+        "Access-Control-Allow-Origin": "*"
+      });
+    }
   }
 }
 
