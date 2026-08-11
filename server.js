@@ -2581,7 +2581,11 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (requestPath === "/") {
+  if (requestPath === "/merchant-dashboard") {
+    // A stable, extension-free dashboard URL avoids the stale static-object
+    // cache left behind at /merchant-dashboard.html by the previous deploy.
+    requestPath = "/merchant-dashboard.html";
+  } else if (requestPath === "/") {
     requestPath = "/index.html";
   }
 
