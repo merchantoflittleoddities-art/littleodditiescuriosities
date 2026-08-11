@@ -790,6 +790,115 @@ async function handleCustomerLogout(req, res) {
   }
 }
 
+/* ──────────────────────────────────────────────────────────────────
+   customer-delete-account
+   Allows an authenticated Traveller to permanently delete their own
+   account and all associated personal data (GDPR right to erasure).
+
+   Customer identity is derived from the signed Bearer token only —
+   the request body is never trusted for identity.  Merchant accounts
+   are explicitly refused (403).
+   ────────────────────────────────────────────────────────────────── */
+async function handleCustomerDeleteAccount(req, res) {
+  if (req.method !== "POST") {
+    sendPrivateApiJson(res, 405, { error: "Method not allowed." });
+    return;
+  }
+
+  const auth = await authenticateProfileRequest(req);
+  if (!auth.ok) {
+    if (auth.statusCode === 503) {
+      sendPrivateApiJson(res, 503, {
+        error: "Authentication state could not be verified. Please try again."
+      });
+      return;
+    }
+
+    sendPrivateApiJson(res, 401, { error: "Please sign in again." });
+    return;
+  }
+
+  const customer = auth.customer;
+  const customerId = auth.customerId;
+
+  // Prevent Merchant account deletion through the Traveller flow
+  if (customer.role === "merchant") {
+    sendPrivateApiJson(res, 403, {
+      error: "Merchant accounts cannot be deleted through this endpoint."
+    });
+    return;
+  }
+
+  // Require deliberate confirmation from the request body
+  let bodyText;
+  try {
+    bodyText = await readRequestBody(req);
+  } catch {
+    sendPrivateApiJson(res, 400, { error: "Invalid request." });
+    return;
+  }
+
+  let body;
+  try {
+    body = JSON.parse(bodyText || "{}");
+  } catch {
+    sendPrivateApiJson(res, 400, { error: "Invalid request body." });
+    return;
+  }
+
+  if (body.confirm !== true) {
+    sendPrivateApiJson(res, 400, {
+      error: "Account deletion must be confirmed."
+    });
+    return;
+  }
+
+  // Delete all customer-linked data inside a transaction so partial
+  // failure rolls back cleanly.  The customer record itself is deleted
+  // last — once it is gone, authenticateProfileRequest() returns 401,
+  // which invalidates every existing session token.
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Disposable customer data
+    await client.query(
+      `DELETE FROM customer_reset_tokens WHERE customer_id = $1`,
+      [customerId]
+    );
+    await client.query(
+      `DELETE FROM customer_addresses_state WHERE customer_id = $1`,
+      [customerId]
+    );
+    await client.query(
+      `DELETE FROM customer_wishlist WHERE customer_id = $1`,
+      [customerId]
+    );
+
+    // The customer record — critical step that invalidates all sessions
+    await client.query(
+      `DELETE FROM customers WHERE id = $1`,
+      [customerId]
+    );
+
+    await client.query("COMMIT");
+
+    sendPrivateApiJson(res, 200, { ok: true });
+  } catch (error) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // Ignore rollback errors so the original failure is reported.
+    }
+    console.error("customer-delete-account: failed to delete account:", error);
+    sendPrivateApiJson(res, 500, {
+      error: "Could not delete account right now. Please try again."
+    });
+  } finally {
+    client.release();
+  }
+}
+
 async function handleDashboardLogin(req, res) {
   if (req.method !== "POST") {
     sendJson(res, 405, { error: "Method not allowed." });
@@ -2357,6 +2466,20 @@ const server = http.createServer((req, res) => {
         }, {
           ...PRIVATE_API_NO_STORE_HEADERS,
           ...LOGOUT_CORS_HEADERS
+        });
+      } else {
+        res.end();
+      }
+    });
+    return;
+  }
+
+  if (isFunctionRoute(requestPath, "customer-delete-account")) {
+    handleCustomerDeleteAccount(req, res).catch((error) => {
+      console.error("customer-delete-account: unexpected failure:", error);
+      if (!res.headersSent) {
+        sendPrivateApiJson(res, 500, {
+          error: "Could not delete account right now. Please try again."
         });
       } else {
         res.end();

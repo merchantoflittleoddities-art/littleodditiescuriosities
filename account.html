@@ -204,6 +204,29 @@
                 <button type="submit" class="button button-primary">Save Preferences</button>
               </form>
             </div>
+
+            <!-- Delete Account -->
+            <div class="card" id="delete-account-section" style="max-width:520px; margin-bottom:1rem;">
+              <h4 style="margin-top:0;">✦ Delete Account</h4>
+              <p class="muted">Remove your Traveller account and all associated personal data. Once your account is deleted, this cannot be undone.</p>
+              <button type="button" class="button button-destructive" id="delete-account-button" style="width:100%;">Delete Account</button>
+
+              <div id="delete-account-confirmation" class="hidden" style="margin-top:1rem; padding-top:1rem; border-top:1px solid rgba(255,255,255,0.12);">
+                <div class="delete-warning" style="background:rgba(255,0,0,0.05); border:1px solid rgba(255,0,0,0.2); border-radius:6px; padding:1.25rem;">
+                  <p style="margin:0 0 0.5rem 0; font-size:1.15em; font-weight:600;">Leaving the Curiosities?</p>
+                  <p style="margin:0 0 0.5rem 0;">Gerald is disappointed, but GDPR says we must let you escape. 🚧</p>
+                  <p style="margin:0 0 1rem 0; font-weight:600;">Once your account is deleted, this cannot be undone.</p>
+                  <p style="margin:0 0 0.5rem 0; font-size:0.9em;">Type <strong>DELETE</strong> to confirm:</p>
+                  <input type="text" id="delete-account-confirm-input" placeholder="DELETE" autocomplete="off" style="width:100%; padding:0.5rem; margin-bottom:1rem; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.2); border-radius:4px; color:var(--text); font-family:inherit;">
+                  <p id="delete-account-error" class="form-error hidden"></p>
+                  <div style="display:flex; gap:0.75rem;">
+                    <button type="button" class="button button-secondary" id="delete-account-cancel" style="flex:1;">Cancel</button>
+                    <button type="button" class="button button-destructive" id="delete-account-confirm" style="flex:1;" disabled>Delete My Account</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
           </section>
 
         </div>

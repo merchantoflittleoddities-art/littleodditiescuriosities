@@ -21,6 +21,7 @@ const PROFILE_URL          = "/.netlify/functions/customer-profile";
 const ADDRESSES_URL        = "/.netlify/functions/customer-addresses";
 const CUSTOMER_ORDERS_URL  = "/.netlify/functions/customer-orders";
 const CUSTOMER_LOGOUT_URL  = "/.netlify/functions/customer-logout";
+const DELETE_ACCOUNT_URL    = "/api/customer-delete-account";
 /* WISHLIST_URL is already declared in script.js (shared with the satchel
    product-card handlers), which loads before this file in the same scope. */
 
@@ -581,6 +582,66 @@ function initPreferencesForm() {
   });
 }
 
+/* ── Delete Account ──────────────────────────────────────────── */
+
+function initDeleteAccountForm() {
+  const button      = document.getElementById("delete-account-button");
+  const panel       = document.getElementById("delete-account-confirmation");
+  const input       = document.getElementById("delete-account-confirm-input");
+  const cancelBtn   = document.getElementById("delete-account-cancel");
+  const confirmBtn  = document.getElementById("delete-account-confirm");
+  const errorEl     = document.getElementById("delete-account-error");
+  if (!button || !panel) return;
+
+  function showPanel() {
+    panel.classList.remove("hidden");
+    input.value = "";
+    confirmBtn.disabled = true;
+    hideFieldError(errorEl);
+  }
+
+  function hidePanel() {
+    panel.classList.add("hidden");
+    input.value = "";
+    confirmBtn.disabled = true;
+    hideFieldError(errorEl);
+  }
+
+  button.addEventListener("click", showPanel);
+  cancelBtn.addEventListener("click", hidePanel);
+
+  input.addEventListener("input", () => {
+    const match = input.value === "DELETE";
+    confirmBtn.disabled = !match;
+    if (match) hideFieldError(errorEl);
+  });
+
+  confirmBtn.addEventListener("click", async () => {
+    if (input.value !== "DELETE") {
+      showFieldError(errorEl, "Please type DELETE to confirm.");
+      return;
+    }
+
+    confirmBtn.disabled = true;
+    hideFieldError(errorEl);
+
+    try {
+      const data = await authFetch(DELETE_ACCOUNT_URL, {
+        method: "POST",
+        body: JSON.stringify({ confirm: true })
+      });
+
+      if (data.ok) {
+        clearCustomerSession();
+        window.location.href = "index.html";
+      }
+    } catch (error) {
+      showFieldError(errorEl, error.message || "Account could not be deleted. Please try again.");
+      confirmBtn.disabled = false;
+    }
+  });
+}
+
 /* ── Entry point ─────────────────────────────────────────────── */
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -589,4 +650,5 @@ document.addEventListener("DOMContentLoaded", () => {
   initForgotPasswordForm();
   initResetPasswordForm();
   initAccountHub();
+  initDeleteAccountForm();
 });
