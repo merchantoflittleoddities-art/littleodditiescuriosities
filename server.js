@@ -931,18 +931,20 @@ async function handleUpdateInventory(req, res) {
     return;
   }
 
-  const client = await pool.connect();
   try {
-    await client.query("BEGIN");
-
-    const locked = await client.query(
+    // Read the current inventory directly through the pool. This mirrors the
+    // proven-working GET path (pool.query) rather than a dedicated client with
+    // a manual transaction (pool.connect + BEGIN/FOR UPDATE/COMMIT), which
+    // fails on the G7Cloud managed PostgreSQL connection pooler while
+    // pool.query() succeeds.
+    const current = await pool.query(
       `SELECT inventory
       FROM inventory_state
       WHERE id = 'all'
-      FOR UPDATE`
+      LIMIT 1`
     );
 
-    const inventory = normalizeInventoryDocument(locked.rows[0]?.inventory || {});
+    const inventory = normalizeInventoryDocument(current.rows[0]?.inventory || {});
 
     if (action === "bulkRestock") {
       const amount = Math.max(0, Number(value) || 0);
@@ -953,7 +955,6 @@ async function handleUpdateInventory(req, res) {
       });
     } else {
       if (!productId) {
-        await client.query("ROLLBACK");
         sendJson(res, 400, { error: "productId is required." });
         return;
       }
@@ -997,7 +998,6 @@ async function handleUpdateInventory(req, res) {
           delete entry.unavailableMessage;
           break;
         default:
-          await client.query("ROLLBACK");
           sendJson(res, 400, { error: `Unknown action: ${action}` });
           return;
       }
@@ -1005,7 +1005,11 @@ async function handleUpdateInventory(req, res) {
       entry.lastUpdated = Date.now();
     }
 
-    await client.query(
+    // Persist the full updated inventory document with a single UPSERT through
+    // the pool. This is the same pattern used successfully by
+    // handleUpdateFeaturedTreasure / handleUpdateDeskEntries and genuinely
+    // writes the change to PostgreSQL.
+    await pool.query(
       `INSERT INTO inventory_state (id, inventory)
       VALUES ('all', $1::jsonb)
       ON CONFLICT (id)
@@ -1013,19 +1017,13 @@ async function handleUpdateInventory(req, res) {
       [JSON.stringify(inventory)]
     );
 
-    await client.query("COMMIT");
     sendJson(res, 200, { ok: true, inventory });
   } catch (error) {
-    try {
-      await client.query("ROLLBACK");
-    } catch {
-      // Ignore rollback failures so original error is reported.
-    }
-
-    console.error("update-inventory error:", error.message);
+    // Log the full error object — not just error.message, which is "" for
+    // SSL/connection failures and gives no diagnostic information (same
+    // approach as handleGetInventory).
+    console.error("update-inventory error:", error);
     sendJson(res, 500, { error: "The Merchant's Supplies could not be updated." });
-  } finally {
-    client.release();
   }
 }
 
