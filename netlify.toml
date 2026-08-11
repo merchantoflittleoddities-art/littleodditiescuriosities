@@ -17,8 +17,16 @@
   force  = true
 
 [[redirects]]
+  from   = "/data/inventory.json"
+  to     = "/.netlify/functions/get-inventory"
+  status = 200
+  force  = true
+
+[[redirects]]
   from   = "/data/desk-entries.json"
   to     = "/.netlify/functions/get-desk-entries"
   status = 200
   force  = true
+
+
 

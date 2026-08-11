@@ -497,8 +497,27 @@ const UNAVAILABLE_STOREFRONT_MESSAGES = {
 };
 
 async function fetchInventory() {
-  const response = await fetch(`${INVENTORY_URL}?cb=${Date.now()}`, { cache: "no-store" });
-  if (!response.ok) throw new Error("Supplies could not be loaded.");
+  const urlsToTry = [
+    `${INVENTORY_URL}?cb=${Date.now()}`,
+    `/.netlify/functions/get-inventory?cb=${Date.now()}`,
+    `/netlify/functions/get-inventory?cb=${Date.now()}`,
+    `./data/inventory.json?cb=${Date.now()}`
+  ];
+
+  let response = null;
+  for (const url of urlsToTry) {
+    try {
+      const res = await fetch(url, { cache: "no-store" });
+      if (res.ok) {
+        response = res;
+        break;
+      }
+    } catch {
+      // Continue to next endpoint
+    }
+  }
+
+  if (!response || !response.ok) throw new Error("Supplies could not be loaded.");
   const { inventory } = await response.json();
   if (typeof inventory !== "object" || inventory === null || Array.isArray(inventory)) {
     throw new Error("Supplies response was malformed.");

@@ -2267,6 +2267,21 @@ async function handleCustomerLogin(req, res) {
   }
 }
 
+function isFunctionRoute(requestPath, name, extraAliases = []) {
+  const norm = requestPath.replace(/\/$/, "");
+  if (
+    norm === `/.netlify/functions/${name}` ||
+    norm === `/.netlify/functions/${name}.js` ||
+    norm === `/netlify/functions/${name}` ||
+    norm === `/netlify/functions/${name}.js` ||
+    norm === `/api/${name}` ||
+    norm === `/${name}`
+  ) {
+    return true;
+  }
+  return extraAliases.includes(norm);
+}
+
 const server = http.createServer((req, res) => {
   let requestPath;
   try {
@@ -2277,7 +2292,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (requestPath === "/.netlify/functions/customer-register") {
+  if (isFunctionRoute(requestPath, "customer-register")) {
     handleCustomerRegister(req, res).catch((error) => {
       console.error("customer-register: unexpected failure:", error);
       if (!res.headersSent) {
@@ -2289,7 +2304,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (requestPath === "/.netlify/functions/customer-login") {
+  if (isFunctionRoute(requestPath, "customer-login")) {
     handleCustomerLogin(req, res).catch((error) => {
       console.error("customer-login: unexpected failure:", error);
       if (!res.headersSent) {
@@ -2301,7 +2316,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (requestPath === "/.netlify/functions/customer-profile") {
+  if (isFunctionRoute(requestPath, "customer-profile")) {
     handleCustomerProfile(req, res).catch((error) => {
       console.error("customer-profile: unexpected failure:", error);
       if (!res.headersSent) {
@@ -2313,7 +2328,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (requestPath === "/.netlify/functions/customer-wishlist") {
+  if (isFunctionRoute(requestPath, "customer-wishlist")) {
     handleCustomerWishlist(req, res).catch((error) => {
       console.error("customer-wishlist: unexpected failure:", error);
       if (!res.headersSent) {
@@ -2325,7 +2340,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (requestPath === "/.netlify/functions/customer-logout") {
+  if (isFunctionRoute(requestPath, "customer-logout")) {
     handleCustomerLogout(req, res).catch((error) => {
       console.error("customer-logout: unexpected failure:", error);
       if (!res.headersSent) {
@@ -2342,7 +2357,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (requestPath === "/.netlify/functions/customer-addresses") {
+  if (isFunctionRoute(requestPath, "customer-addresses")) {
     handleCustomerAddresses(req, res).catch((error) => {
       console.error("customer-addresses: unexpected failure:", error);
       if (!res.headersSent) {
@@ -2354,7 +2369,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (requestPath === "/.netlify/functions/get-inventory") {
+  if (isFunctionRoute(requestPath, "get-inventory", ["/data/inventory.json"])) {
     handleGetInventory(req, res).catch((error) => {
       console.error("get-inventory: unexpected failure:", error);
       if (!res.headersSent) {
@@ -2371,7 +2386,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (requestPath === "/.netlify/functions/update-inventory") {
+  if (isFunctionRoute(requestPath, "update-inventory")) {
     handleUpdateInventory(req, res).catch((error) => {
       console.error("update-inventory: unexpected failure:", error);
       if (!res.headersSent) {
@@ -2383,7 +2398,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (requestPath === "/.netlify/functions/dashboard-login") {
+  if (isFunctionRoute(requestPath, "dashboard-login")) {
     handleDashboardLogin(req, res).catch((error) => {
       console.error("dashboard-login: unexpected failure:", error);
       if (!res.headersSent) {
@@ -2397,7 +2412,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (requestPath === "/.netlify/functions/get-order-status") {
+  if (isFunctionRoute(requestPath, "get-order-status")) {
     handleGetOrderStatus(req, res).catch((error) => {
       console.error("get-order-status: unexpected failure:", error);
       if (!res.headersSent) {
@@ -2409,7 +2424,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (requestPath === "/.netlify/functions/update-order-status") {
+  if (isFunctionRoute(requestPath, "update-order-status")) {
     handleUpdateOrderStatus(req, res).catch((error) => {
       console.error("update-order-status: unexpected failure:", error);
       if (!res.headersSent) {
@@ -2421,7 +2436,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (requestPath === "/.netlify/functions/get-orders") {
+  if (isFunctionRoute(requestPath, "get-orders")) {
     handleGetOrders(req, res).catch((error) => {
       console.error("get-orders: unexpected failure:", error);
       if (!res.headersSent) {
@@ -2433,7 +2448,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (requestPath === "/.netlify/functions/customer-orders") {
+  if (isFunctionRoute(requestPath, "customer-orders")) {
     handleCustomerOrders(req, res).catch((error) => {
       console.error("customer-orders: unexpected failure:", error);
       if (!res.headersSent) {
@@ -2447,7 +2462,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (requestPath === "/.netlify/functions/create-checkout-session") {
+  if (isFunctionRoute(requestPath, "create-checkout-session")) {
     handleCreateCheckoutSession(req, res).catch((error) => {
       console.error("create-checkout-session: unexpected failure:", error);
       if (!res.headersSent) {
@@ -2459,7 +2474,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (requestPath === "/.netlify/functions/get-featured-treasure") {
+  if (isFunctionRoute(requestPath, "get-featured-treasure", ["/data/featured-treasure.json"])) {
     handleGetFeaturedTreasure(req, res).catch((error) => {
       console.error("get-featured-treasure: unexpected failure:", error);
       if (!res.headersSent) {
@@ -2471,7 +2486,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (requestPath === "/.netlify/functions/update-featured-treasure") {
+  if (isFunctionRoute(requestPath, "update-featured-treasure")) {
     handleUpdateFeaturedTreasure(req, res).catch((error) => {
       console.error("update-featured-treasure: unexpected failure:", error);
       if (!res.headersSent) {
@@ -2483,7 +2498,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (requestPath === "/.netlify/functions/get-desk-entries") {
+  if (isFunctionRoute(requestPath, "get-desk-entries", ["/data/desk-entries.json"])) {
     handleGetDeskEntries(req, res).catch((error) => {
       console.error("get-desk-entries: unexpected failure:", error);
       if (!res.headersSent) {
@@ -2495,7 +2510,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (requestPath === "/.netlify/functions/update-desk-entries") {
+  if (isFunctionRoute(requestPath, "update-desk-entries")) {
     handleUpdateDeskEntries(req, res).catch((error) => {
       console.error("update-desk-entries: unexpected failure:", error);
       if (!res.headersSent) {
@@ -2507,7 +2522,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (requestPath === "/.netlify/functions/promote-merchant") {
+  if (isFunctionRoute(requestPath, "promote-merchant")) {
     handlePromoteMerchant(req, res).catch((error) => {
       console.error("promote-merchant: unexpected failure:", error);
       if (!res.headersSent) {
@@ -2519,7 +2534,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (requestPath === "/.netlify/functions/stripe-webhook") {
+  if (isFunctionRoute(requestPath, "stripe-webhook")) {
     handleStripeWebhook(req, res).catch((error) => {
       console.error("stripe-webhook: unexpected failure:", error);
       if (!res.headersSent) {
@@ -2532,7 +2547,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (requestPath === "/.netlify/functions/customer-forgot-password") {
+  if (isFunctionRoute(requestPath, "customer-forgot-password")) {
     handleCustomerForgotPassword(req, res).catch((error) => {
       console.error("customer-forgot-password: unexpected failure:", error);
       if (!res.headersSent) {
@@ -2544,7 +2559,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (requestPath === "/.netlify/functions/customer-reset-password") {
+  if (isFunctionRoute(requestPath, "customer-reset-password")) {
     handleCustomerResetPassword(req, res).catch((error) => {
       console.error("customer-reset-password: unexpected failure:", error);
       if (!res.headersSent) {
