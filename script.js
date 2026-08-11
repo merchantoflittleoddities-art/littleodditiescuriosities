@@ -2150,6 +2150,13 @@ function saveCustomerSession(token, customer, remember) {
   const selectedStore = remember ? window.localStorage : window.sessionStorage;
   const otherStore = remember ? window.sessionStorage : window.localStorage;
 
+  // Make the freshly authenticated session authoritative. getCustomerToken()
+  // reads sessionStorage BEFORE localStorage, so a stale token from an earlier
+  // account (e.g. a previous Izuku login left in sessionStorage) could win over
+  // the new session written to the other store. Clear BOTH stores before
+  // writing so no leftover token/info can overwrite the new session.
+  selectedStore.removeItem(CUSTOMER_TOKEN_KEY);
+  selectedStore.removeItem(CUSTOMER_INFO_KEY);
   otherStore.removeItem(CUSTOMER_TOKEN_KEY);
   otherStore.removeItem(CUSTOMER_INFO_KEY);
   selectedStore.setItem(CUSTOMER_TOKEN_KEY, token);
