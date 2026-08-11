@@ -16,7 +16,7 @@
   <!-- ═══════════════════════════════════════════════════════
        Login Screen
        Shown on first visit and after session expiry.
-       The password is checked by netlify/functions/dashboard-login.js
+       The password is checked by the Node API route /api/dashboard-login
        against the DASHBOARD_PASSWORD environment variable.
        ═══════════════════════════════════════════════════════ -->
   <div id="login-screen" class="login-screen">
@@ -660,7 +660,7 @@
     script.js is NOT loaded here — no customer cart logic is involved.
   -->
   <!-- Versioned once to replace the previously long-cached dashboard bundle. -->
-  <script src="merchant-dashboard.js?v=2026-08-11-1" defer></script>
+  <script src="merchant-dashboard.js?v=2026-08-11-2" defer></script>
 
 </body>
 </html>

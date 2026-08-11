@@ -27,10 +27,12 @@
    ============================================================ */
 
 const AUTH_TOKEN_KEY      = "lo_merchant_token";
-const LOGIN_URL           = "/.netlify/functions/dashboard-login";
-const ORDERS_URL          = "/.netlify/functions/get-orders";
-const GET_ORDER_STATUS_URL    = "/.netlify/functions/get-order-status";
-const UPDATE_ORDER_STATUS_URL = "/.netlify/functions/update-order-status";
+// G7Cloud runs the Node server, not Netlify Functions. Keep every Merchant
+// Dashboard request on the server's explicit API surface.
+const LOGIN_URL               = "/api/dashboard-login";
+const ORDERS_URL              = "/api/get-orders";
+const GET_ORDER_STATUS_URL    = "/api/get-order-status";
+const UPDATE_ORDER_STATUS_URL = "/api/update-order-status";
 
 /** Configuration for each fulfilment status */
 const STATUS_CONFIG = {
@@ -474,8 +476,8 @@ function exportCSV(orders) {
    Module: Inventory
    ============================================================ */
 
-const INVENTORY_URL        = "/.netlify/functions/get-inventory";
-const UPDATE_INVENTORY_URL = "/.netlify/functions/update-inventory";
+const INVENTORY_URL        = "/api/get-inventory";
+const UPDATE_INVENTORY_URL = "/api/update-inventory";
 
 /** Cached inventory object { [productId]: entry } */
 let allInventory = {};
@@ -498,10 +500,7 @@ const UNAVAILABLE_STOREFRONT_MESSAGES = {
 
 async function fetchInventory() {
   const urlsToTry = [
-    `${INVENTORY_URL}?cb=${Date.now()}`,
-    `/.netlify/functions/get-inventory?cb=${Date.now()}`,
-    `/netlify/functions/get-inventory?cb=${Date.now()}`,
-    `./data/inventory.json?cb=${Date.now()}`
+    `${INVENTORY_URL}?cb=${Date.now()}`
   ];
 
   let response = null;
@@ -929,8 +928,8 @@ function escapeHtml(str) {
    Module: Featured Treasure Management
    ============================================================ */
 
-const GET_FEATURED_URL    = "/.netlify/functions/get-featured-treasure";
-const UPDATE_FEATURED_URL = "/.netlify/functions/update-featured-treasure";
+const GET_FEATURED_URL    = "/api/get-featured-treasure";
+const UPDATE_FEATURED_URL = "/api/update-featured-treasure";
 
 let featuredData = null;
 
@@ -1128,8 +1127,8 @@ function closeFeaturedModal() {
    Module: Merchant's Journal Management
    ============================================================ */
 
-const GET_DESK_URL    = "/.netlify/functions/get-desk-entries";
-const UPDATE_DESK_URL = "/.netlify/functions/update-desk-entries";
+const GET_DESK_URL    = "/api/get-desk-entries";
+const UPDATE_DESK_URL = "/api/update-desk-entries";
 
 let deskData = null;
 
