@@ -60,6 +60,16 @@ const PRIVATE_API_NO_STORE_HEADERS = {
   "Vary": "Authorization, Cookie"
 };
 
+// The merchant dashboard contains authenticated UI state and must not remain
+// stale behind the platform's long-lived static-asset cache after a deploy.
+const MERCHANT_DASHBOARD_NO_STORE_HEADERS = {
+  "Cache-Control": "no-store, no-cache, max-age=0, must-revalidate",
+  "CDN-Cache-Control": "no-store",
+  "Surrogate-Control": "no-store",
+  "Pragma": "no-cache",
+  "Expires": "0"
+};
+
 const LOGOUT_CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
@@ -2596,8 +2606,14 @@ const server = http.createServer((req, res) => {
     const contentType =
       MIME_TYPES[extension] || "application/octet-stream";
 
+    const isMerchantDashboardAsset =
+      requestPath === "/merchant-dashboard.html" ||
+      requestPath === "/merchant-dashboard.js" ||
+      requestPath === "/merchant-dashboard.css";
+
     res.writeHead(200, {
-      "Content-Type": contentType
+      "Content-Type": contentType,
+      ...(isMerchantDashboardAsset ? MERCHANT_DASHBOARD_NO_STORE_HEADERS : {})
     });
 
     res.end(data);
