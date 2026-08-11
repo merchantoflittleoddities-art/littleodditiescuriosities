@@ -17,7 +17,7 @@ const MERCHANTS_GUIDE_PATH = "./data/merchants-guide.json";
 const DESK_ENTRIES_PATH    = "./data/desk-entries.json";
 const FEATURED_TREASURE_PATH = "./data/featured-treasure.json";
 const INVENTORY_URL        = "/api/get-inventory";
-const WISHLIST_URL         = "/.netlify/functions/customer-wishlist";
+const WISHLIST_URL         = "/api/customer-wishlist";
 const IMAGE_ROOT           = "assets/images/products";
 const FREE_SHIPPING_THRESHOLD = 30;
 const SHIPPING_OPTIONS = {
@@ -1964,7 +1964,7 @@ async function initiateStripeCheckout(cart, products) {
   }
 
   try {
-    const response = await fetch("/.netlify/functions/create-checkout-session", {
+    const response = await fetch("/api/create-checkout-session", {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
