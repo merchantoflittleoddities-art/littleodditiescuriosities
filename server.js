@@ -1023,16 +1023,6 @@ async function handleUpdateInventory(req, res) {
     // SSL/connection failures and gives no diagnostic information (same
     // approach as handleGetInventory).
     console.error("update-inventory error:", error);
-    console.log("DIAGNOSTIC update-inventory DB ERROR:", JSON.stringify({
-      code: error && error.code,
-      message: error && error.message,
-      detail: error && error.detail,
-      hint: error && error.hint,
-      table: error && error.table,
-      column: error && error.column,
-      constraint: error && error.constraint,
-      routine: error && error.routine
-    }));
     sendJson(res, 500, { error: "The Merchant's Supplies could not be updated." });
   }
 }
@@ -1066,16 +1056,6 @@ async function handleGetOrderStatus(req, res) {
     sendPrivateApiJson(res, 200, { statuses });
   } catch (error) {
     console.error("get-order-status error:", error.message);
-    console.log("DIAGNOSTIC get-order-status DB ERROR:", JSON.stringify({
-      code: error && error.code,
-      message: error && error.message,
-      detail: error && error.detail,
-      hint: error && error.hint,
-      table: error && error.table,
-      column: error && error.column,
-      constraint: error && error.constraint,
-      routine: error && error.routine
-    }));
     sendPrivateApiJson(res, 500, { error: "Order status could not be retrieved." });
   }
 }
