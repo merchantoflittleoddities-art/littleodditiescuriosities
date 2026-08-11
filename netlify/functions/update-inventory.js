@@ -2,32 +2,15 @@
    Little Oddities Curiosities — Netlify Function
    update-inventory.js
 
-   Merchant-only endpoint — requires a valid dashboard auth token
-   (the same token issued by dashboard-login.js).
-
-   Reads and writes inventory to Netlify Blobs under "inventory/all".
-
-   Request body:
-   {
-     action:    "setStock" | "adjustStock" | "setThreshold" |
-                "setAvailable" | "setMessage" | "bulkRestock",
-     productId: string,    // not needed for bulkRestock
-     value:     number | boolean | string
-   }
-
-   For bulkRestock:
-   {
-     action: "bulkRestock",
-     value:  number   // amount to add to every product's stock
-   }
+   Merchant-only endpoint — requires a valid dashboard auth token.
+   Reads and writes inventory to PostgreSQL (inventory_state table).
    ============================================================= */
 
-const { connectLambda, getStore } = require("@netlify/blobs");
-const crypto       = require("crypto");
+const crypto = require("crypto");
+const pool = require("../../db");
 
-/* ── Token verification (same logic as get-orders.js) ────── */
 function verifyToken(token) {
-  const secret = process.env.DASHBOARD_SECRET;
+  const secret = process.env.G7CLOUD_DASHBOARD_SECRET || process.env.DASHBOARD_SECRET;
   if (!token || !secret) return false;
 
   const dotIndex = token.lastIndexOf(".");
@@ -48,101 +31,161 @@ function verifyToken(token) {
   return age >= 0 && age < 8 * 60 * 60 * 1000;
 }
 
-/* ── Default entry for a product not yet in inventory ─────── */
 function defaultEntry(productId) {
   return {
     productId,
-    stock:                        null,   /* null = unmanaged / unlimited */
-    lowStockThreshold:            3,
-    available:                    true,
-    availableStorefrontMessage:   "shelves",
+    stock: null,
+    lowStockThreshold: 3,
+    available: true,
+    availableStorefrontMessage: "shelves",
     unavailableStorefrontMessage: "roaming",
-    lastUpdated:                  Date.now()
+    outOfStockMessage: "roaming",
+    lastUpdated: Date.now()
   };
 }
 
-/* ── Handler ─────────────────────────────────────────────── */
-exports.handler = async function (event) {
+function parseStoredJsonObject(value, fallback) {
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return fallback;
+    }
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return fallback;
+  }
+  return value;
+}
 
-  /* Only accept POST */
-  if (event.httpMethod !== "POST") {
-    return { statusCode: 405, body: JSON.stringify({ error: "Method not allowed." }) };
+function normalizeInventoryEntry(productId, entry) {
+  const source = parseStoredJsonObject(entry, {});
+  const normalized = {
+    ...defaultEntry(productId),
+    ...source,
+    productId: source.productId || productId,
+    lowStockThreshold: Math.max(0, Number(source.lowStockThreshold ?? 3) || 0),
+    available: source.available !== false,
+    lastUpdated: Number.isFinite(Number(source.lastUpdated)) ? Number(source.lastUpdated) : Date.now()
+  };
+
+  if (source.stock === null) {
+    normalized.stock = null;
+  } else {
+    const stock = Number(source.stock);
+    normalized.stock = Number.isFinite(stock) ? Math.max(0, stock) : null;
   }
 
-  /* Verify auth token */
+  normalized.availableStorefrontMessage = String(
+    source.availableStorefrontMessage ||
+    source.availableMessage ||
+    "shelves"
+  );
+
+  normalized.unavailableStorefrontMessage = String(
+    source.unavailableStorefrontMessage ||
+    source.unavailableMessage ||
+    source.outOfStockMessage ||
+    "roaming"
+  );
+
+  normalized.outOfStockMessage = normalized.unavailableStorefrontMessage;
+
+  delete normalized.storefrontMessage;
+  delete normalized.availableMessage;
+  delete normalized.unavailableMessage;
+
+  return normalized;
+}
+
+function normalizeInventoryDocument(value) {
+  const source = parseStoredJsonObject(value, {});
+  const normalized = {};
+
+  Object.entries(source).forEach(([productId, entry]) => {
+    normalized[productId] = normalizeInventoryEntry(productId, entry);
+  });
+
+  return normalized;
+}
+
+exports.handler = async function (event) {
+  const headers = {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "*"
+  };
+
+  if (event.httpMethod !== "POST") {
+    return { statusCode: 405, headers, body: JSON.stringify({ error: "Method not allowed." }) };
+  }
+
   const authHeader = event.headers["authorization"] || event.headers["Authorization"] || "";
-  const token      = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
 
   if (!verifyToken(token)) {
-    return { statusCode: 401, body: JSON.stringify({ error: "Unauthorised." }) };
+    return { statusCode: 401, headers, body: JSON.stringify({ error: "Unauthorised." }) };
   }
 
-  /* Parse request */
   let action, productId, value;
   try {
     ({ action, productId, value } = JSON.parse(event.body || "{}"));
   } catch {
-    return { statusCode: 400, body: JSON.stringify({ error: "Invalid request body." }) };
+    return { statusCode: 400, headers, body: JSON.stringify({ error: "Invalid request body." }) };
   }
 
   if (!action) {
-    return { statusCode: 400, body: JSON.stringify({ error: "action is required." }) };
+    return { statusCode: 400, headers, body: JSON.stringify({ error: "action is required." }) };
   }
 
+  const client = await pool.connect();
   try {
-    /* V1 (Lambda-compat) functions must hand the request event to the
-       Blobs client so it can pick up the site's blob credentials. */
-    connectLambda(event);
+    await client.query("BEGIN");
 
-    const store     = getStore("inventory");
-    const raw       = await store.get("all", { type: "text" });
-    const inventory = raw ? JSON.parse(raw) : {};
+    const locked = await client.query(
+      `SELECT inventory
+      FROM inventory_state
+      WHERE id = 'all'
+      FOR UPDATE`
+    );
+
+    const inventory = normalizeInventoryDocument(locked.rows[0]?.inventory || {});
 
     if (action === "bulkRestock") {
-      /* Add value to every tracked product; set stock to value for untracked ones */
       const amount = Math.max(0, Number(value) || 0);
       Object.keys(inventory).forEach((id) => {
         const entry = inventory[id];
-        entry.stock       = entry.stock === null ? amount : Math.max(0, entry.stock + amount);
+        entry.stock = entry.stock === null ? amount : Math.max(0, entry.stock + amount);
         entry.lastUpdated = Date.now();
       });
-
     } else {
-      /* All other actions operate on a single product */
       if (!productId) {
-        return { statusCode: 400, body: JSON.stringify({ error: "productId is required." }) };
+        await client.query("ROLLBACK");
+        client.release();
+        return { statusCode: 400, headers, body: JSON.stringify({ error: "productId is required." }) };
       }
 
-      /* Ensure the entry exists */
       if (!inventory[productId]) {
         inventory[productId] = defaultEntry(productId);
       }
 
       const entry = inventory[productId];
-
       switch (action) {
-
         case "setStock":
           entry.stock = value === null ? null : Math.max(0, Number(value) || 0);
           break;
-
         case "adjustStock":
-          /* Adjust by a signed delta; null stock becomes the delta itself */
           if (entry.stock === null) {
             entry.stock = Math.max(0, Number(value) || 0);
           } else {
             entry.stock = Math.max(0, entry.stock + (Number(value) || 0));
           }
           break;
-
         case "setThreshold":
           entry.lowStockThreshold = Math.max(0, Number(value) || 0);
           break;
-
         case "setAvailable":
           entry.available = Boolean(value);
           break;
-
         case "setMessage":
           if (typeof value === "object" && value !== null) {
             if (value.availableStorefrontMessage) {
@@ -159,26 +202,42 @@ exports.handler = async function (event) {
           delete entry.availableMessage;
           delete entry.unavailableMessage;
           break;
-
         default:
-          return { statusCode: 400, body: JSON.stringify({ error: `Unknown action: ${action}` }) };
+          await client.query("ROLLBACK");
+          client.release();
+          return { statusCode: 400, headers, body: JSON.stringify({ error: `Unknown action: ${action}` }) };
       }
 
       entry.lastUpdated = Date.now();
     }
 
-    await store.set("all", JSON.stringify(inventory));
+    await client.query(
+      `INSERT INTO inventory_state (id, inventory)
+      VALUES ('all', $1::jsonb)
+      ON CONFLICT (id)
+      DO UPDATE SET inventory = EXCLUDED.inventory`,
+      [JSON.stringify(inventory)]
+    );
+
+    await client.query("COMMIT");
+    client.release();
 
     return {
       statusCode: 200,
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({ ok: true, inventory })
     };
-
   } catch (error) {
-    console.error("update-inventory error:", error.message);
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // ignore
+    }
+    client.release();
+    console.error("update-inventory error:", error);
     return {
       statusCode: 500,
+      headers,
       body: JSON.stringify({ error: "The Merchant's Supplies could not be updated." })
     };
   }
