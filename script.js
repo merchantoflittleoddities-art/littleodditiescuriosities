@@ -2245,8 +2245,41 @@ function initPage() {
   });
 }
 
+let jeffElement = null;
+let jeffIsAnimating = false;
+
+/** Lazily creates the Jeff stage + sprite the first time he is summoned. */
+function ensureJeff() {
+  if (jeffElement) return jeffElement;
+
+  const stage = document.createElement("div");
+  stage.className = "jeff-stage";
+  stage.id = "jeffStage";
+
+  const jeff = document.createElement("div");
+  jeff.className = "jeff";
+  jeff.id = "jeff";
+
+  stage.appendChild(jeff);
+  document.body.appendChild(stage);
+  jeffElement = jeff;
+  return jeffElement;
+}
+
+/** Swims Jeff across the viewport when the hidden ✦ trigger is clicked. */
 function summonJeff() {
-  console.log("Jeff the Land Shark is watching...");
+  const jeff = ensureJeff();
+  if (jeffIsAnimating) return;
+  jeffIsAnimating = true;
+
+  jeff.classList.remove("active", "wiggle");
+  void jeff.offsetWidth; // force reflow
+  jeff.classList.add("active");
+
+  jeff.addEventListener("animationend", function handler() {
+    jeff.removeEventListener("animationend", handler);
+    jeffIsAnimating = false;
+  });
 }
 
 document.addEventListener("DOMContentLoaded", () => {

@@ -1697,3 +1697,80 @@ textarea {
     justify-content: center;
   }
 }
+
+/* ============================================================
+   Jeff the Land Shark — Hidden Artifacts easter egg
+   Triggered by the hidden ✦ button inside the Hidden Artifacts tier card.
+   ============================================================ */
+
+.jeff-stage {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 100;
+  overflow: hidden;
+}
+
+.jeff {
+  position: absolute;
+  bottom: 0;
+  left: -200px;
+  width: 180px;
+  height: 180px;
+  background: url('assets/images/logo/jeff-reference.png') center/contain no-repeat;
+  filter: drop-shadow(0 10px 30px rgba(0, 0, 0, 0.5));
+  will-change: transform;
+}
+
+.jeff.active {
+  animation: jeffSwim 4.5s ease-in-out forwards;
+}
+
+@keyframes jeffSwim {
+  0% {
+    transform: translate(-120vw, 0) rotate(0deg) scale(0.8);
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  25% {
+    transform: translate(20vw, 30px) rotate(-5deg) scale(1);
+  }
+  40% {
+    transform: translate(35vw, -15px) rotate(3deg) scale(1);
+  }
+  50% {
+    transform: translate(40vw, 10px) rotate(-2deg) scale(1);
+  }
+  60% {
+    transform: translate(40vw, -10px) rotate(-3deg) scale(1);
+  }
+  70% {
+    transform: translate(40vw, 15px) rotate(2deg) scale(1);
+  }
+  80% {
+    transform: translate(40vw, -5px) rotate(0deg) scale(1);
+  }
+  90% {
+    transform: translate(60vw, -10px) rotate(5deg) scale(0.95);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(120vw, 0) rotate(0deg) scale(0.9);
+    opacity: 0;
+  }
+}
+
+.jeff.wiggle {
+  animation: jeffWiggle 0.4s ease-in-out;
+}
+
+@keyframes jeffWiggle {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-5deg); }
+  75% { transform: rotate(5deg); }
+}
