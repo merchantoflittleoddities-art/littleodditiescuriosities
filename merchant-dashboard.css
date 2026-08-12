@@ -141,18 +141,19 @@ body {
 }
 
 .login-card .form-group--password input[type="password"] {
-  padding-right: 3rem;
+  padding-right: 2.75rem;
 }
 
 .login-card .password-toggle {
   position: absolute;
-  top: 50%;
+  top: 0;
+  bottom: 0;
   right: 0.5rem;
-  transform: translateY(-50%);
+  margin: auto 0;
   display: grid;
   place-items: center;
-  width: 2.25rem;
-  height: 2.25rem;
+  width: 2rem;
+  height: 2rem;
   padding: 0;
   border: none;
   border-radius: 50%;
@@ -173,8 +174,8 @@ body {
 }
 
 .login-card .password-toggle svg {
-  width: 1.25rem;
-  height: 1.25rem;
+  width: 1.125rem;
+  height: 1.125rem;
   display: block;
 }
 
