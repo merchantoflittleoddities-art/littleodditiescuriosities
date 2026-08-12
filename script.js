@@ -2245,6 +2245,10 @@ function initPage() {
   });
 }
 
+function summonJeff() {
+  console.log("Jeff the Land Shark is watching...");
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   initPage();
 
@@ -2265,4 +2269,11 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     });
   }
+
+  document.querySelectorAll(".jeff-trigger").forEach((trigger) => {
+    trigger.addEventListener("click", (event) => {
+      event.preventDefault();
+      summonJeff();
+    });
+  });
 });
