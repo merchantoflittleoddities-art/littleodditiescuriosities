@@ -711,6 +711,61 @@ textarea {
   resize: vertical;
 }
 
+.form-group--password {
+  position: relative;
+}
+
+.form-group--password input[type="password"],
+.form-group--password input[type="text"] {
+  padding-right: 52px;
+}
+
+.password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.2s ease, background-color 0.2s ease;
+}
+
+.password-toggle:hover {
+  color: var(--accent);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.password-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.password-toggle svg {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+
+.password-toggle .password-toggle__icon-hide {
+  display: none;
+}
+
+.password-toggle--visible .password-toggle__icon-show {
+  display: none;
+}
+
+.password-toggle--visible .password-toggle__icon-hide {
+  display: block;
+}
+
 .form-grid {
   display: grid;
   gap: 24px;
