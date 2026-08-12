@@ -78,7 +78,13 @@
 
   <!-- Clear the cart once payment is confirmed so it cannot be submitted twice -->
   <script>
-    localStorage.removeItem("littleOdditiesCabinet");
+    document.addEventListener("DOMContentLoaded", function() {
+      if (typeof clearCart === "function") {
+        clearCart();
+      } else {
+        localStorage.removeItem("littleOdditiesCabinet");
+      }
+    });
   </script>
 
 </body>

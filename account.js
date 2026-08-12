@@ -96,6 +96,15 @@ function initRegisterForm() {
       if (!response.ok) throw new Error(data.error || "Registration failed.");
 
       saveCustomerSession(data.token, data.customer, remember);
+      if (typeof clearCart === "function") {
+        const existingCart = window.localStorage.getItem(`littleOdditiesCabinet:${data.customer.id}`);
+        if (!existingCart) {
+          const guestCart = window.localStorage.getItem("littleOdditiesCabinet");
+          if (guestCart) {
+            window.localStorage.setItem(`littleOdditiesCabinet:${data.customer.id}`, guestCart);
+          }
+        }
+      }
       window.location.href = "account.html";
     } catch (error) {
       showFieldError(errorEl, error.message);
@@ -129,6 +138,15 @@ function initSigninForm() {
       if (!response.ok) throw new Error(data.error || "Sign in failed.");
 
       saveCustomerSession(data.token, data.customer, remember);
+      if (typeof clearCart === "function") {
+        const existingCart = window.localStorage.getItem(`littleOdditiesCabinet:${data.customer.id}`);
+        if (!existingCart) {
+          const guestCart = window.localStorage.getItem("littleOdditiesCabinet");
+          if (guestCart) {
+            window.localStorage.setItem(`littleOdditiesCabinet:${data.customer.id}`, guestCart);
+          }
+        }
+      }
       window.location.href = "account.html";
     } catch (error) {
       showFieldError(errorEl, error.message);
@@ -274,6 +292,7 @@ async function initAccountHub() {
 
       try {
         const token = getCustomerToken();
+        const customer = getCustomerInfo();
         const response = await fetch(CUSTOMER_LOGOUT_URL, {
           method: "POST",
           cache: "no-store",
@@ -287,6 +306,9 @@ async function initAccountHub() {
 
         if (response.status === 401) {
           clearCustomerSession();
+          if (customer && customer.id) {
+            window.localStorage.removeItem(`littleOdditiesCabinet:${customer.id}`);
+          }
           window.location.href = "signin.html";
           return;
         }
@@ -296,6 +318,9 @@ async function initAccountHub() {
         }
 
         clearCustomerSession();
+        if (customer && customer.id) {
+          window.localStorage.removeItem(`littleOdditiesCabinet:${customer.id}`);
+        }
         window.location.href = "index.html";
       } catch (error) {
         alert(error.message || "Sign out could not be completed. Please try again.");

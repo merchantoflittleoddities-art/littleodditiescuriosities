@@ -170,14 +170,25 @@ function getTierIcon(name) {
 // Cart — storage & mutation
 // ============================================================
 
+function getCartKey() {
+  const customer = getCustomerInfo();
+  return customer ? `littleOdditiesCabinet:${customer.id}` : CART_KEY;
+}
+
 function getCart() {
-  const stored = window.localStorage.getItem(CART_KEY);
+  const stored = window.localStorage.getItem(getCartKey());
   if (!stored) return [];
   try { return JSON.parse(stored); } catch (e) { return []; }
 }
 
 function saveCart(cart) {
-  window.localStorage.setItem(CART_KEY, JSON.stringify(cart));
+  window.localStorage.setItem(getCartKey(), JSON.stringify(cart));
+  renderCartCount();
+}
+
+function clearCart() {
+  const key = getCartKey();
+  window.localStorage.removeItem(key);
   renderCartCount();
 }
 
