@@ -2309,4 +2309,26 @@ document.addEventListener("DOMContentLoaded", () => {
       summonJeff();
     });
   });
+
+  function initPasswordToggles(root = document) {
+    root.querySelectorAll("[data-password-toggle]").forEach((button) => {
+      if (button.dataset.passwordToggleBound) return;
+      button.dataset.passwordToggleBound = "true";
+
+      const input = root.querySelector("#" + button.getAttribute("data-password-toggle"));
+      if (!input) return;
+
+      button.setAttribute("type", "button");
+      button.setAttribute("aria-label", "Show password");
+
+      button.addEventListener("click", () => {
+        const showing = input.type === "text";
+        input.type = showing ? "password" : "text";
+        button.setAttribute("aria-label", showing ? "Show password" : "Hide password");
+        button.classList.toggle("password-toggle--visible", !showing);
+      });
+    });
+  }
+
+  initPasswordToggles();
 });

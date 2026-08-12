@@ -136,6 +136,60 @@ body {
   border-color: var(--gold);
 }
 
+.login-card .form-group--password {
+  position: relative;
+}
+
+.login-card .form-group--password input[type="password"] {
+  padding-right: 3rem;
+}
+
+.login-card .password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 0.5rem;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color var(--transition), background-color var(--transition);
+}
+
+.login-card .password-toggle:hover {
+  color: var(--gold);
+  background: rgba(201, 169, 110, 0.12);
+}
+
+.login-card .password-toggle:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.login-card .password-toggle svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  display: block;
+}
+
+.login-card .password-toggle .password-toggle__icon-hide {
+  display: none;
+}
+
+.login-card .password-toggle--visible .password-toggle__icon-show {
+  display: none;
+}
+
+.login-card .password-toggle--visible .password-toggle__icon-hide {
+  display: block;
+}
+
 .login-error {
   margin-top: 1rem;
   color: #ff6b6b;
