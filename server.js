@@ -1965,6 +1965,34 @@ async function handleStripeWebhook(req, res) {
     try {
       await client.query("BEGIN");
 
+      // Idempotency: record this Stripe event. If it was already processed,
+      // the unique constraint prevents duplicate inventory decrements.
+      const eventResult = await client.query(
+        `INSERT INTO stripe_webhook_events
+         (stripe_event_id, checkout_session_id, payment_intent_id, customer_email, processed_at, order_items)
+         VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+         ON CONFLICT (stripe_event_id) DO NOTHING
+         RETURNING stripe_event_id`,
+        [
+          stripeEvent.id,
+          session.id || null,
+          session.payment_intent || null,
+          session.customer_details?.email || session.customer_email || null,
+          Date.now(),
+          JSON.stringify(orderItems)
+        ]
+      );
+
+      if (!eventResult.rows.length) {
+        await client.query("COMMIT");
+        console.log("stripe-webhook: duplicate event ignored", {
+          stripeEventId: stripeEvent.id
+        });
+        res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
+        res.end("Event already processed.");
+        return;
+      }
+
       const locked = await client.query(
         `SELECT inventory
         FROM inventory_state
