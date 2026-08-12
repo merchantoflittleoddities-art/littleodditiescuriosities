@@ -713,6 +713,7 @@ textarea {
 
 .form-group--password {
   position: relative;
+  display: block;
 }
 
 .form-group--password input[type="password"],
