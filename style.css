@@ -722,13 +722,14 @@ textarea {
 
 .password-toggle {
   position: absolute;
-  top: 50%;
+  top: 0;
+  bottom: 0;
   right: 8px;
-  transform: translateY(-50%);
+  margin: auto 0;
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   border: none;
   border-radius: 50%;
@@ -749,8 +750,8 @@ textarea {
 }
 
 .password-toggle svg {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   display: block;
 }
 
