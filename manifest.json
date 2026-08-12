@@ -1,0 +1,18 @@
+{
+  "name": "Little Oddities Curiosities",
+  "short_name": "Little Oddities",
+  "description": "Tiny treasures & curious creations.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1f1820",
+  "theme_color": "#1f1820",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/assets/images/logo/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
