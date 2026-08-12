@@ -1407,6 +1407,29 @@ async function handleCreateCheckoutSession(req, res) {
   }
 
   try {
+    const inventory = await loadInventoryDocument(pool);
+    const stockErrors = [];
+    for (const item of resolvedItems) {
+      const entry = inventory[item.productId];
+      if (!entry) continue;
+      if (entry.available === false) {
+        stockErrors.push({ productId: item.productId, name: item.name, reason: "unavailable" });
+        continue;
+      }
+      const stock = Number(entry.stock);
+      if (Number.isFinite(stock) && stock < item.quantity) {
+        stockErrors.push({ productId: item.productId, name: item.name, reason: "insufficient", available: stock });
+      }
+    }
+
+    if (stockErrors.length) {
+      const message = stockErrors
+        .map((e) => e.reason === "unavailable" ? `${e.name} is currently unavailable.` : `Only ${e.available} of ${e.name} remain.`)
+        .join(" ");
+      sendJson(res, 400, { error: message });
+      return;
+    }
+
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
       line_items: [
