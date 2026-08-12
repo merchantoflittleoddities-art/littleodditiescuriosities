@@ -19,3 +19,6 @@ npm-debug.log*
 # VS Code workspace settings (keep if personal)
 .vscode/*
 !.vscode/settings.json
+# Migration data - never commit production exports/import files
+migration-artifacts/
+g7cloud_postgres_import_real_data.sql
