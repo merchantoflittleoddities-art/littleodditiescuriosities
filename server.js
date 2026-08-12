@@ -2167,7 +2167,37 @@ async function handleCustomerForgotPassword(req, res) {
   const siteUrl = process.env.URL || "";
   const resetUrl = `${siteUrl}/reset-password.html?token=${resetToken}`;
 
-  sendJson(res, 200, { resetUrl });
+  const resendApiKey = String(process.env.RESEND_API_KEY || "").trim();
+  const fromEmail = String(process.env.FROM_EMAIL || "").trim();
+
+  if (resendApiKey && fromEmail) {
+    try {
+      await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${resendApiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          from: fromEmail,
+          to: [email],
+          subject: "Reset your Little Oddities Curiosities password",
+          html: `
+            <p>Hello,</p>
+            <p>A request was made to reset the password for your Little Oddities Curiosities account.</p>
+            <p>If this was you, set a new password using the link below. The link expires soon and can only be used once.</p>
+            <p><a href="${resetUrl}">Reset your Traveller Password</a></p>
+            <p>If you did not request this, you can safely ignore this email.</p>
+            <p>— The Merchant</p>
+          `
+        })
+      });
+    } catch (emailError) {
+      console.error("customer-forgot-password: failed to send reset email:", emailError);
+    }
+  }
+
+  sendJson(res, 200, {});
 }
 
 async function handleCustomerResetPassword(req, res) {
