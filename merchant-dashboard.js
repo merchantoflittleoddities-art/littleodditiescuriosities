@@ -652,7 +652,7 @@ function renderInventoryTable(products, inventory, query = "", statusFilter = ""
 
     return `
       <tr data-product-id="${product.id}">
-        <td>
+        <td data-label="Treasure">
           <div class="inv-product-cell">
             ${imgHtml}
             <div>
@@ -661,8 +661,8 @@ function renderInventoryTable(products, inventory, query = "", statusFilter = ""
             </div>
           </div>
         </td>
-        <td>${badge}</td>
-        <td>
+        <td data-label="Status">${badge}</td>
+        <td data-label="Stock">
           <input class="stock-input"
                  type="number" min="0" value="${stock === null ? "" : stock}"
                  placeholder="∞"
@@ -670,21 +670,21 @@ function renderInventoryTable(products, inventory, query = "", statusFilter = ""
                  data-product-id="${product.id}"
                  title="Set exact stock (leave blank for unlimited)">
         </td>
-        <td>
+        <td data-label="Adjust">
           <div class="stock-controls">
             <button class="btn-stock-adj" data-action="adjustStock" data-product-id="${product.id}" data-value="-1" title="Remove 1">−</button>
             <button class="btn-stock-adj" data-action="adjustStock" data-product-id="${product.id}" data-value="1"  title="Add 1">+</button>
             <button class="btn-stock-adj" data-action="adjustStock" data-product-id="${product.id}" data-value="10" title="Add 10" style="width:auto;padding:0 8px;font-size:0.78rem;">+10</button>
           </div>
         </td>
-        <td>
+        <td data-label="Low Stock At">
           <input class="stock-input"
                  type="number" min="0" value="${inv.lowStockThreshold ?? 3}"
                  data-action="setThreshold"
                  data-product-id="${product.id}"
                  title="Show low stock warning when stock falls to this number">
         </td>
-        <td>
+        <td data-label="Availability">
           <!-- SECTION 1: Availability -->
           <div class="avail-btn-group" data-selected-avail="${avail ? "true" : "false"}">
             <button type="button" class="btn-toggle-avail ${avail ? "active" : ""}" data-avail-toggle="true" data-product-id="${product.id}">Available</button>
@@ -692,7 +692,7 @@ function renderInventoryTable(products, inventory, query = "", statusFilter = ""
           </div>
           <button type="button" class="btn-secondary btn-save-action" data-action="saveAvailability" data-product-id="${product.id}">Save Availability</button>
         </td>
-        <td>
+        <td data-label="Storefront Message">
           <!-- SECTION 2: Storefront Message -->
           <div class="msg-category-group">
             <div class="msg-category">
@@ -1687,6 +1687,29 @@ function initPasswordToggles(root = document) {
   });
 }
 
+/** Mobile navigation burger — adapts the customer-site toggle to this isolated dashboard. */
+function initMobileNav() {
+  const toggle = document.getElementById("menu-toggle");
+  const dashboard = document.getElementById("dashboard");
+  if (!toggle || !dashboard) return;
+
+  const setOpen = (open) => {
+    dashboard.classList.toggle("nav-open", open);
+    toggle.setAttribute("aria-expanded", String(open));
+    toggle.setAttribute("aria-label", open ? "Close navigation" : "Open navigation");
+    toggle.textContent = open ? "✕" : "☰";
+  };
+
+  toggle.addEventListener("click", () => {
+    setOpen(!dashboard.classList.contains("nav-open"));
+  });
+
+  /* Close the menu after choosing a destination or action. */
+  dashboard.querySelectorAll(".nav-item, #refresh-button, #logout-button").forEach((el) => {
+    el.addEventListener("click", () => setOpen(false));
+  });
+}
+
 /** Wire all dashboard interactions — called once after login or if already authenticated */
 function initDashboardUI() {
 
@@ -1709,6 +1732,9 @@ function initDashboardUI() {
       }
     });
   });
+
+  /* Mobile navigation (burger) */
+  initMobileNav();
 
   /* Inventory module */
   initInventoryUI();
