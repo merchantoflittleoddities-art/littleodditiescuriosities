@@ -1163,6 +1163,34 @@ function escapeHtml(str) {
     .replace(/'/g,  "&#39;");
 }
 
+function showLogin() {
+  document.getElementById("login-screen").classList.remove("hidden");
+  document.getElementById("dashboard").classList.add("hidden");
+}
+
+function showDashboard() {
+  document.getElementById("login-screen").classList.add("hidden");
+  document.getElementById("dashboard").classList.remove("hidden");
+}
+
+function showLoading() {
+  document.getElementById("loading-state").classList.remove("hidden");
+  document.getElementById("error-state").classList.add("hidden");
+  document.querySelectorAll(".tab-panel").forEach((p) => p.classList.add("hidden"));
+}
+
+function hideLoading() {
+  document.getElementById("loading-state").classList.add("hidden");
+}
+
+function showError(message) {
+  document.getElementById("loading-state").classList.add("hidden");
+  const errorState = document.getElementById("error-state");
+  const errorMsg   = document.getElementById("error-message");
+  errorState.classList.remove("hidden");
+  if (errorMsg) errorMsg.textContent = message;
+}
+
 /* ============================================================
    Module: Featured Treasure Management
    ============================================================ */
