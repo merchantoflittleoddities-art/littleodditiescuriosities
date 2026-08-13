@@ -55,6 +55,15 @@
        ═══════════════════════════════════════════════════════ -->
   <div id="dashboard" class="dashboard hidden">
 
+    <!-- ── Mobile Top Bar (burger + branding, phones only) ── -->
+    <div class="dashboard-topbar" id="dashboard-topbar">
+      <button class="menu-toggle" id="menu-toggle" type="button"
+              aria-label="Open navigation"
+              aria-expanded="false"
+              aria-controls="sidebar-nav">☰</button>
+      <span class="topbar-title">🕯️ Merchant's Ledger</span>
+    </div>
+
     <!-- ── Sidebar ──────────────────────────────────────── -->
     <aside class="sidebar">
 
@@ -64,7 +73,7 @@
         <p>Little Oddities Curiosities</p>
       </div>
 
-      <nav class="sidebar-nav" aria-label="Dashboard navigation">
+      <nav class="sidebar-nav" id="sidebar-nav" aria-label="Dashboard navigation">
         <button class="nav-item active" data-tab="home" type="button">
           <span class="nav-icon">🕯️</span>
           <span>Dashboard</span>
