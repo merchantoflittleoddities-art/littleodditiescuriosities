@@ -681,7 +681,7 @@ body {
 
 .ledger-table tbody td {
   padding: 0.8rem 1rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--gold-dim);
   color: var(--text-primary);
   vertical-align: middle;
 }
@@ -692,6 +692,12 @@ body {
 
 .ledger-table tbody tr:hover {
   background: rgba(201, 169, 110, 0.05);
+}
+
+/* Subtle column separators between register cells (skip the last Actions column) */
+.ledger-table thead th:not(:last-child),
+.ledger-table tbody td:not(:last-child) {
+  border-right: 1px solid var(--gold-dim);
 }
 
 .ledger-col-treasures,
@@ -1676,7 +1682,7 @@ body {
     align-items: center;
     gap: 0.75rem;
     padding: 0.55rem 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid var(--gold-dim);
     text-align: right;
   }
   .ledger-table tbody tr td:last-child {
