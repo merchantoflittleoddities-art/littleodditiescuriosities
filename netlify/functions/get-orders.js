@@ -91,15 +91,35 @@ exports.handler = async function (event) {
   }
 
   try {
+    /* Optional cursor for backward pagination through checkout sessions.
+       The cursor is a Stripe resource id (e.g. cs_live_...) returned from a
+       previous page and is validated before it ever reaches Stripe. The
+       cursor advances through *all* checkout sessions — unpaid/incomplete
+       sessions are filtered out only after retrieval. */
+    const rawCursor = (event.queryStringParameters && event.queryStringParameters.starting_after) || null;
+
+    if (rawCursor && !/^([A-Za-z0-9_]{1,255})$/.test(rawCursor)) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ error: "Invalid starting_after cursor." })
+      };
+    }
+
     /*
-     * Fetch the 100 most recent checkout sessions.
-     * Expand line_items so we get purchased products in one request.
-     * For shops with >100 orders, add pagination using `starting_after`.
-     */
-    const sessions = await stripe.checkout.sessions.list({
+      * Fetch up to 100 checkout sessions per page.
+      * Expand line_items so we get purchased products in one request.
+      * For shops with >100 orders the cursor (starting_after) fetches the
+      * next older page.
+      */
+    const listParams = {
       limit: 100,
       expand: ["data.line_items"]
-    });
+    };
+    if (rawCursor) {
+      listParams.starting_after = rawCursor;
+    }
+
+    const sessions = await stripe.checkout.sessions.list(listParams);
 
     /* Normalise each paid session into a clean order object */
     const orders = sessions.data
@@ -138,10 +158,21 @@ exports.handler = async function (event) {
         };
       });
 
+    /* Cursor-based pagination over checkout sessions. The next cursor is the
+       last session id in this page and is returned only when Stripe reports
+       that more sessions remain. */
+    const lastSessionId = sessions.data.length
+      ? sessions.data[sessions.data.length - 1].id
+      : null;
+
     return {
       statusCode: 200,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ orders })
+      body: JSON.stringify({
+        orders,
+        hasMore: !!sessions.has_more,
+        nextCursor: (sessions.has_more && lastSessionId) ? lastSessionId : null
+      })
     };
 
   } catch (error) {

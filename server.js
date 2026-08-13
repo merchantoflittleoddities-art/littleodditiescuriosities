@@ -1505,10 +1505,32 @@ async function handleGetOrders(req, res) {
   }
 
   try {
-    const sessions = await stripe.checkout.sessions.list({
+        /* Optional cursor for backward pagination through checkout sessions.
+       The cursor is a Stripe resource id (e.g. cs_live_...) returned from a
+       previous page. It is validated before ever reaching Stripe. Note the
+       cursor advances through *all* checkout sessions — unpaid/incomplete
+       sessions are filtered out only after retrieval. */
+    let startingAfter = null;
+    try {
+      startingAfter = new URL(req.url, "http://localhost").searchParams.get("starting_after") || null;
+    } catch {
+      startingAfter = null;
+    }
+
+    if (startingAfter && !/^([A-Za-z0-9_]{1,255})$/.test(startingAfter)) {
+      sendPrivateApiJson(res, 400, { error: "Invalid starting_after cursor." });
+      return;
+    }
+
+    const listParams = {
       limit: 100,
       expand: ["data.line_items"]
-    });
+    };
+    if (startingAfter) {
+      listParams.starting_after = startingAfter;
+    }
+
+    const sessions = await stripe.checkout.sessions.list(listParams);
 
     const orders = sessions.data
       .filter((s) => s.payment_status === "paid")
@@ -1542,9 +1564,20 @@ async function handleGetOrders(req, res) {
           paymentStatus: s.payment_status,
           created: s.created * 1000
         };
-      });
+            });
 
-    sendPrivateApiJson(res, 200, { orders });
+    /* Cursor-based pagination over checkout sessions. The next cursor is the
+       last session id in this page and is returned only when Stripe reports
+       that more sessions remain. */
+    const lastSessionId = sessions.data.length
+      ? sessions.data[sessions.data.length - 1].id
+      : null;
+
+    sendPrivateApiJson(res, 200, {
+      orders,
+      hasMore: !!sessions.has_more,
+      nextCursor: (sessions.has_more && lastSessionId) ? lastSessionId : null
+    });
   } catch (error) {
     console.error("get-orders Stripe error:", error.message);
     sendPrivateApiJson(res, 500, { error: "The ledger could not be consulted. Please try again." });

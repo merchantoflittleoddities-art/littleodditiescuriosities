@@ -196,7 +196,7 @@
           <p class="panel-subtitle">Every treasure claimed by a traveller.</p>
         </header>
 
-        <!-- Search, filter and export toolbar -->
+                <!-- Search, filter, sort and export toolbar -->
         <div class="ledger-toolbar">
           <div class="ledger-search">
             <input
@@ -214,14 +214,69 @@
               <option value="posted">🟣 Posted</option>
               <option value="completed">🟢 Completed</option>
             </select>
+            <select id="sort-filter" aria-label="Sort orders">
+              <option value="newest">✦ Newest → Oldest</option>
+              <option value="oldest">✦ Oldest → Newest</option>
+              <option value="highest">✦ Highest total first</option>
+              <option value="lowest">✦ Lowest total first</option>
+            </select>
+            <select id="date-filter" aria-label="Filter by date">
+              <option value="all">All dates</option>
+              <option value="today">Today</option>
+              <option value="week">Last 7 days</option>
+              <option value="month">Last 30 days</option>
+              <option value="custom">Custom range…</option>
+            </select>
           </div>
           <button id="export-csv" class="btn-secondary" type="button">
             📥 Export Ledger
           </button>
         </div>
 
-        <p id="orders-count" class="orders-count"></p>
-        <div id="orders-list" class="orders-grid"></div>
+        <!-- Custom date range (revealed when "Custom range…" is selected) -->
+        <div id="date-range-row" class="ledger-date-range hidden">
+          <label>From
+            <input type="date" id="date-from" aria-label="From date">
+          </label>
+          <label>To
+            <input type="date" id="date-to" aria-label="To date">
+          </label>
+          <button id="date-range-clear" class="btn-ghost" type="button">Clear</button>
+        </div>
+
+        <!-- Loaded count + active-filter hint -->
+        <div class="ledger-meta">
+          <p id="orders-count" class="orders-count"></p>
+          <p id="ledger-hint" class="orders-count"></p>
+        </div>
+
+        <!-- Order Register (spreadsheet-style) -->
+        <div class="ledger-table-wrap">
+          <table class="ledger-table" id="ledger-table" role="table" aria-label="Order register">
+            <thead>
+              <tr>
+                <th scope="col">Order</th>
+                <th scope="col">Date</th>
+                <th scope="col">Customer</th>
+                <th scope="col" class="ledger-th-treasures">Treasures</th>
+                <th scope="col" class="ledger-th-total">Total</th>
+                <th scope="col" class="ledger-th-status">Status</th>
+                <th scope="col" class="ledger-th-actions">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="orders-list">
+              <!-- Populated by merchant-dashboard.js -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Load older orders (server-side cursor pagination) -->
+        <div class="ledger-load-older">
+          <button id="load-older" class="btn-secondary" type="button" disabled>
+            📜 Load older orders
+          </button>
+          <p id="load-older-hint" class="orders-count"></p>
+        </div>
 
       </section>
 
@@ -517,7 +572,23 @@
       </section>
 
     </main>
-  </div><!-- /dashboard -->
+    </div><!-- /dashboard -->
+
+  <!-- Modal: Order Detail (preserves every piece of the old order card) -->
+  <div id="modal-order-detail" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="modal-order-title">
+    <div class="modal-card" style="max-width:720px;">
+      <div class="modal-header">
+        <h2 id="modal-order-title">📜 Order Details</h2>
+        <button type="button" class="modal-close" id="modal-order-close" aria-label="Close details">&times;</button>
+      </div>
+      <div class="modal-body" id="modal-order-body" style="gap:0.6rem;">
+        <!-- Populated by merchant-dashboard.js -->
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-secondary" id="modal-order-close-btn">Close</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Modal: Featured Treasure Editor -->
   <div id="modal-featured" class="modal-overlay hidden">
@@ -678,7 +749,7 @@
     merchant-dashboard.js is entirely self-contained.
     script.js is NOT loaded here — no customer cart logic is involved.
   -->
-  <!-- Versioned once to replace the previously long-cached dashboard bundle. -->
+    <!-- Versioned once to replace the previously long-cached dashboard bundle. -->
   <script src="merchant-dashboard.js?v=2026-08-13-1" defer></script>
 
 </body>
