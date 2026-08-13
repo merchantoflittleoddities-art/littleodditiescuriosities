@@ -2184,6 +2184,16 @@ function initMobileNav() {
   });
 }
 
+/** Activate a dashboard tab — highlight the nav item and show its panel */
+function activateTab(tabName) {
+  document.querySelectorAll(".nav-item").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.tab === tabName);
+  });
+  document.querySelectorAll(".tab-panel").forEach((panel) => {
+    panel.classList.toggle("hidden", panel.id !== `tab-${tabName}`);
+  });
+}
+
 /** Wire all dashboard interactions — called once after login or if already authenticated */
 function initDashboardUI() {
 
