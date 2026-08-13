@@ -1709,3 +1709,18 @@ body {
     justify-content: space-between;
   }
 }
+
+/* ------------------------------------------------------------
+   Merchant's Thoughts - timeline cards (journal-style left accent)
+   ------------------------------------------------------------ */
+#tab-thoughts .order-card {
+  position: relative;
+  border-left: 3px solid var(--text-gold);
+}
+#tab-thoughts .order-card.order-card--pinned {
+  border-left-color: var(--gold);
+  background: linear-gradient(180deg, rgba(201,169,110,0.04) 0%, transparent 40%);
+}
+#tab-thoughts .order-card-body {
+  padding-top: 0.6rem;
+}
