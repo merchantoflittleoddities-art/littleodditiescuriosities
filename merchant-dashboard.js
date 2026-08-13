@@ -1535,6 +1535,113 @@ function closeJournalModal() {
   document.getElementById("modal-journal")?.classList.add("hidden");
 }
 
+function initThoughtsUI() {
+  /* Search Thoughts */
+  document.getElementById("thoughts-search-input")?.addEventListener("input", renderThoughtsList);
+
+  /* Open thoughts editor modal */
+  document.getElementById("thoughts-add-btn")?.addEventListener("click", () => openThoughtsModal());
+  document.getElementById("modal-thoughts-close")?.addEventListener("click", closeThoughtsModal);
+  document.getElementById("thoughts-cancel-btn")?.addEventListener("click", closeThoughtsModal);
+
+  /* Close modal on backdrop click */
+  document.getElementById("modal-thoughts")?.addEventListener("click", (e) => {
+    if (e.target === document.getElementById("modal-thoughts")) closeThoughtsModal();
+  });
+
+  /* Thoughts editor form submission */
+  document.getElementById("thoughts-editor-form")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!thoughtsData) await fetchThoughtsData();
+
+    const id        = document.getElementById("thoughts-entry-id").value;
+    const title     = document.getElementById("thoughts-title").value.trim() || null;
+    const date      = document.getElementById("thoughts-date").value;
+    const time      = document.getElementById("thoughts-time").value;
+    const author    = document.getElementById("thoughts-author").value.trim() || "Alby";
+    const bodyText  = document.getElementById("thoughts-body").value.trim();
+    const pinned    = document.getElementById("thoughts-pinned").checked;
+
+    if (!date || !time || !bodyText) {
+      showToast("Please complete the required fields: date, time and body.");
+      return;
+    }
+
+    const body = bodyText.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+
+    let existing = thoughtsData.entries.find((entry) => entry.id === id);
+    if (existing) {
+      existing.title = title;
+      existing.date = date;
+      existing.time = time;
+      existing.author = author;
+      existing.body = body;
+      existing.pinned = pinned;
+    } else {
+      const newId = `th-${Date.now()}`;
+      const newEntry = {
+        id: newId,
+        title,
+        date,
+        time,
+        author,
+        body,
+        pinned,
+        createdAt: new Date().toISOString()
+      };
+      thoughtsData.entries.unshift(newEntry);
+    }
+
+    try {
+      await saveThoughtsData(thoughtsData);
+      renderThoughtsList();
+      closeThoughtsModal();
+      showToast("Thought saved.");
+    } catch (err) {
+      showToast(err.message);
+    }
+  });
+
+  /* Delete thought button (in-modal) */
+  document.getElementById("thoughts-delete-btn")?.addEventListener("click", async () => {
+    const id = document.getElementById("thoughts-entry-id").value;
+    if (!id) return;
+    if (window.confirm("Are you sure you want to permanently delete this thought?")) {
+      thoughtsData.entries = thoughtsData.entries.filter((item) => item.id !== id);
+      try {
+        await saveThoughtsData(thoughtsData);
+        renderThoughtsList();
+        closeThoughtsModal();
+        showToast("Thought permanently deleted.");
+      } catch (err) { showToast(err.message); }
+    }
+  });
+
+  /* Delegated actions on Thoughts list */
+  document.getElementById("thoughts-list")?.addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-thoughts-action]");
+    if (!btn) return;
+
+    const action = btn.dataset.thoughtsAction;
+    const id     = btn.dataset.thoughtsId;
+    const entry  = thoughtsData?.entries?.find((item) => item.id === id);
+    if (!entry) return;
+
+    if (action === "edit") {
+      openThoughtsModal(entry);
+    } else if (action === "delete") {
+      if (window.confirm("Are you sure you want to permanently delete this thought?")) {
+        thoughtsData.entries = thoughtsData.entries.filter((item) => item.id !== id);
+        try {
+          await saveThoughtsData(thoughtsData);
+          renderThoughtsList();
+          showToast("Thought permanently deleted.");
+        } catch (err) { showToast(err.message); }
+      }
+    }
+  });
+}
+
 function initCmsUI() {
   /* Featured settings form */
   document.getElementById("featured-settings-form")?.addEventListener("submit", async (e) => {
@@ -1787,44 +1894,165 @@ function initCmsUI() {
         } catch (err) { showToast(err.message); }
       }
     }
+    });
+}
+
+/* ============================================================
+   Module: Merchant's Thoughts Management
+   ============================================================ */
+
+const GET_THOUGHTS_URL    = "/api/get-merchant-thoughts";
+const UPDATE_THOUGHTS_URL = "/api/update-merchant-thoughts";
+
+let thoughtsData = null;
+
+async function fetchThoughtsData() {
+  try {
+    const res = await fetch(GET_THOUGHTS_URL, { cache: "no-store" });
+    if (!res.ok) throw new Error();
+    thoughtsData = await res.json();
+  } catch {
+    const res = await fetch("./data/merchant-thoughts.json", { cache: "no-store" });
+    thoughtsData = await res.json();
+  }
+  if (!thoughtsData) thoughtsData = {};
+  if (!thoughtsData.settings) thoughtsData.settings = {};
+  if (!Array.isArray(thoughtsData.entries)) thoughtsData.entries = [];
+  return thoughtsData;
+}
+
+async function saveThoughtsData(payload) {
+  const token = getToken();
+  const res = await fetch(UPDATE_THOUGHTS_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`
+    },
+    body: JSON.stringify(payload)
   });
+
+  if (res.status === 401) { clearToken(); showLogin(); throw new Error("Your session has expired."); }
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to save Merchant's thoughts.");
+  }
+
+  const data = await res.json();
+  thoughtsData = data.data || payload;
+  return thoughtsData;
 }
 
-function showLogin() {
-  document.getElementById("login-screen").classList.remove("hidden");
-  document.getElementById("dashboard").classList.add("hidden");
+async function loadAndRenderThoughts() {
+  await fetchThoughtsData();
+  renderThoughtsList();
 }
 
-function showDashboard() {
-  document.getElementById("login-screen").classList.add("hidden");
-  document.getElementById("dashboard").classList.remove("hidden");
+function thoughtsSortKey(entry) {
+  const d = entry?.date || "";
+  const t = entry?.time || "00:00";
+  return Date.parse(`${d}T${t}`) || 0;
 }
 
-function showLoading() {
-  document.getElementById("loading-state").classList.remove("hidden");
-  document.getElementById("error-state").classList.add("hidden");
-  document.querySelectorAll(".tab-panel").forEach((p) => p.classList.add("hidden"));
-}
+function renderThoughtsList() {
+  const container = document.getElementById("thoughts-list");
+  if (!container) return;
 
-function hideLoading() {
-  document.getElementById("loading-state").classList.add("hidden");
-}
+  const searchQuery = (document.getElementById("thoughts-search-input")?.value || "").trim().toLowerCase();
 
-function showError(message) {
-  document.getElementById("loading-state").classList.add("hidden");
-  const errorState = document.getElementById("error-state");
-  const errorMsg   = document.getElementById("error-message");
-  errorState.classList.remove("hidden");
-  if (errorMsg) errorMsg.textContent = message;
-}
-
-function activateTab(tabName) {
-  document.querySelectorAll(".nav-item").forEach((btn) => {
-    btn.classList.toggle("active", btn.dataset.tab === tabName);
+  const entries = [...(thoughtsData.entries || [])].sort((a, b) => {
+    if (Boolean(a.pinned) !== Boolean(b.pinned)) return a.pinned ? -1 : 1;
+    const timeA = thoughtsSortKey(a);
+    const timeB = thoughtsSortKey(b);
+    return timeB - timeA;
   });
-  document.querySelectorAll(".tab-panel").forEach((panel) => {
-    panel.classList.toggle("hidden", panel.id !== `tab-${tabName}`);
+
+  const filtered = entries.filter((entry) => {
+    const bodyStr = Array.isArray(entry.body) ? entry.body.join(" ") : String(entry.body || "");
+    return !searchQuery ||
+           (entry.title || "").toLowerCase().includes(searchQuery) ||
+           (entry.author || "").toLowerCase().includes(searchQuery) ||
+           bodyStr.toLowerCase().includes(searchQuery);
   });
+
+  setText("thoughts-count", `${filtered.length} thought${filtered.length === 1 ? "" : "s"} in the timeline`);
+
+  if (!filtered.length) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-emblem">💭</div>
+        <h3>No thoughts found in the timeline.</h3>
+        <p>Click "Jot a Thought" above to add a note to the Merchant's private records.</p>
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = filtered.map((entry) => {
+    const pinnedBadge = entry.pinned
+      ? `<span class="stock-badge stock-badge--low" style="margin-left:0.5rem;">📌 Pinned</span>`
+      : "";
+
+    const dateDisplay = entry.date;
+    const timeDisplay = entry.time || "";
+    const datetimeStr = entry.date ? `${entry.date}${timeDisplay ? " · " + timeDisplay : ""}` : "Undated";
+    const authorStr = entry.author ? `<div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.2rem;">— ${escapeHtml(entry.author)}</div>` : "";
+    const bodyHtml = Array.isArray(entry.body) && entry.body.length
+      ? entry.body.map((p) => `<p style="font-size:0.85rem;color:var(--text-muted);margin-top:0.5rem;font-style:italic;line-height:1.4;">${escapeHtml(p)}</p>`).join("")
+      : "";
+
+    return `
+      <article class="order-card ${entry.pinned ? "order-card--pinned" : ""}" data-thoughts-id="${entry.id}">
+        <div class="order-card-header">
+          <div class="order-card-title">
+            ${entry.title ? `<span class="order-badge">${escapeHtml(entry.title)}</span>` : `<span class="order-badge" style="opacity:0.5;font-style:italic;color:var(--text-muted);">Untitled</span>`}
+            ${pinnedBadge}
+          </div>
+        </div>
+        <div class="order-card-body">
+          <div style="font-size:0.8rem;color:var(--text-gold);">
+            🕯️ ${escapeHtml(datetimeStr)}
+          </div>
+          ${authorStr}
+          ${bodyHtml}
+        </div>
+        <div class="order-card-actions">
+          <button class="btn-status" data-thoughts-action="edit" data-thoughts-id="${entry.id}">Edit</button>
+          <button class="btn-ghost" data-thoughts-action="delete" data-thoughts-id="${entry.id}" style="color:#ff6b6b;margin-left:auto;">Delete</button>
+        </div>
+      </article>
+    `;
+  }).join("");
+}
+
+function openThoughtsModal(entry = null) {
+  const modal = document.getElementById("modal-thoughts");
+  const title = document.getElementById("modal-thoughts-title");
+
+  if (!modal) return;
+
+  const todayStr = new Date().toLocaleDateString("en-CA");
+
+  document.getElementById("thoughts-entry-id").value = entry ? entry.id : "";
+  document.getElementById("thoughts-title").value = entry?.title || "";
+  document.getElementById("thoughts-date").value = entry?.date || todayStr;
+  document.getElementById("thoughts-time").value = entry?.time || "";
+  document.getElementById("thoughts-author").value = entry?.author || "Alby";
+  const bodyStr = Array.isArray(entry?.body) ? entry.body.join("\n\n") : (entry?.body || "");
+  document.getElementById("thoughts-body").value = bodyStr;
+  document.getElementById("thoughts-pinned").checked = Boolean(entry?.pinned);
+
+  const deleteBtn = document.getElementById("thoughts-delete-btn");
+  if (deleteBtn) deleteBtn.style.display = entry ? "inline-block" : "none";
+
+  const createdAtInput = document.getElementById("thoughts-created-at");
+  if (createdAtInput) createdAtInput.value = entry?.createdAt || "";
+
+  if (title) title.textContent = entry ? "💭 Edit Thought" : "💭 Jot a New Thought";
+  modal.classList.remove("hidden");
+}
+
+function closeThoughtsModal() {
+  document.getElementById("modal-thoughts")?.classList.add("hidden");
 }
 
 /* ============================================================
@@ -1976,6 +2204,10 @@ function initDashboardUI() {
       if (tab === "journal") {
         loadAndRenderJournal();
       }
+      /* Load Thoughts data when Merchant's Thoughts tab is opened */
+      if (tab === "thoughts") {
+        loadAndRenderThoughts();
+      }
     });
   });
 
@@ -1987,6 +2219,9 @@ function initDashboardUI() {
 
   /* CMS module (Featured Treasure & Merchant's Journal) */
   initCmsUI();
+
+  /* Thoughts module */
+  initThoughtsUI();
 
   /* ── Ledger toolbar: search, filters, sort, date, export, pagination ── */
   const searchInput  = document.getElementById("search-input");

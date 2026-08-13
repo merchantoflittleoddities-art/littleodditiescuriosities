@@ -23,3 +23,8 @@ CREATE TABLE IF NOT EXISTS desk_entries_state (
   id TEXT PRIMARY KEY,
   payload JSONB NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS merchant_thoughts_state (
+  id TEXT PRIMARY KEY,
+  payload JSONB NOT NULL
+);

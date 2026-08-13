@@ -94,6 +94,10 @@
           <span class="nav-icon">📖</span>
           <span>Merchant's Journal</span>
         </button>
+        <button class="nav-item" data-tab="thoughts" type="button">
+          <span class="nav-icon">💭</span>
+          <span>Merchant's Thoughts</span>
+        </button>
         <button class="nav-item" data-tab="stats" type="button">
           <span class="nav-icon">📊</span>
           <span>Tallies</span>
@@ -488,13 +492,39 @@
         <p id="journal-count" class="orders-count"></p>
         <div id="journal-list" class="orders-grid"></div>
 
-      </section>
+        </section>
 
 
-      <!-- ╔══════════════════════════════════════════════════
-           Tab: Tallies (statistics)
-           ══════════════════════════════════════════════════ -->
-      <section id="tab-stats" class="tab-panel hidden">
+        <!-- ╔══════════════════════════════════════════════════
+             Tab: Merchant's Thoughts
+             ══════════════════════════════════════════════════ -->
+        <section id="tab-thoughts" class="tab-panel hidden">
+
+          <header class="panel-header">
+            <h1>💭 Merchant's Thoughts</h1>
+            <p class="panel-subtitle">Private half-formed thoughts, scribbled notes and things the Merchant did not put in the Journal.</p>
+          </header>
+
+          <!-- Thoughts Timeline Toolbar -->
+          <div class="ledger-toolbar">
+            <div class="ledger-search">
+              <input type="text" id="thoughts-search-input" placeholder="Search thoughts..." autocomplete="off">
+            </div>
+            <button id="thoughts-add-btn" class="btn-primary" type="button" style="max-width:240px;margin-left:auto;">
+              ✦ Jot a Thought
+            </button>
+          </div>
+
+          <p id="thoughts-count" class="orders-count"></p>
+          <div id="thoughts-list" class="orders-grid"></div>
+
+        </section>
+
+
+        <!-- ╔══════════════════════════════════════════════════
+             Tab: Tallies (statistics)
+             ══════════════════════════════════════════════════ -->
+        <section id="tab-stats" class="tab-panel hidden">
 
         <header class="panel-header">
           <h1>📊 The Merchant's Tallies</h1>
@@ -744,6 +774,57 @@
     </div>
   </div>
 
+  <!-- Modal: Merchant's Thoughts Editor -->
+  <div id="modal-thoughts" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 id="modal-thoughts-title">💭 Jot a Thought</h2>
+        <button type="button" class="modal-close" id="modal-thoughts-close" aria-label="Close editor">&times;</button>
+      </div>
+      <form id="thoughts-editor-form" class="modal-body">
+        <input type="hidden" id="thoughts-entry-id">
+
+        <div class="form-group">
+          <label for="thoughts-title">Entry Title (optional)</label>
+          <input type="text" id="thoughts-title" placeholder="e.g. About the brass compass">
+        </div>
+
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label for="thoughts-date">Entry Date *</label>
+            <input type="date" id="thoughts-date" required>
+          </div>
+          <div class="form-group">
+            <label for="thoughts-time">Entry Time</label>
+            <input type="time" id="thoughts-time" required>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="thoughts-author">Author</label>
+          <input type="text" id="thoughts-author" placeholder="e.g. The Merchant">
+        </div>
+
+        <div class="form-group">
+          <label for="thoughts-body">Thought Text *</label>
+          <textarea id="thoughts-body" rows="6" required placeholder="Write the thought... (separate paragraphs with blank lines)"></textarea>
+        </div>
+
+        <div class="form-group checkbox-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="thoughts-pinned">
+            Pin to top of the timeline
+          </label>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn-secondary" id="thoughts-cancel-btn">Cancel</button>
+          <button type="button" class="btn-status" id="thoughts-delete-btn" style="display:none;">Delete Thought</button>
+          <button type="submit" class="btn-primary" style="max-width:200px;">Save Thought</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
   <!--
     merchant-dashboard.js is entirely self-contained.

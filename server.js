@@ -1846,6 +1846,88 @@ async function handleUpdateDeskEntries(req, res) {
   }
 }
 
+async function handleGetMerchantThoughts(req, res) {
+  try {
+    const result = await pool.query(
+      `SELECT payload
+      FROM merchant_thoughts_state
+      WHERE id = 'data'
+      LIMIT 1`
+    );
+
+    let thoughtsData = result.rows[0]?.payload || null;
+    if (!thoughtsData) {
+      const filePath = path.join(__dirname, "data", "merchant-thoughts.json");
+      if (fs.existsSync(filePath)) {
+        thoughtsData = JSON.parse(fs.readFileSync(filePath, "utf8"));
+      } else {
+        thoughtsData = {
+          title: "🕯️ Merchant's Thoughts",
+          subtitle: "",
+          settings: {},
+          entries: []
+        };
+      }
+    }
+
+    sendJson(res, 200, thoughtsData, {
+      "Cache-Control": "no-store",
+      "Access-Control-Allow-Origin": "*"
+    });
+  } catch (error) {
+    console.error("get-merchant-thoughts error:", error.message);
+    try {
+      const filePath = path.join(__dirname, "data", "merchant-thoughts.json");
+      const fallback = fs.readFileSync(filePath, "utf8");
+      res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+      res.end(fallback);
+    } catch {
+      sendJson(res, 500, { error: "Could not read merchant thoughts data." });
+    }
+  }
+}
+
+async function handleUpdateMerchantThoughts(req, res) {
+  if (req.method !== "POST") {
+    sendJson(res, 405, { error: "Method not allowed." });
+    return;
+  }
+
+  const token = getDashboardBearerToken(req);
+  if (!verifyDashboardToken(token)) {
+    sendPrivateApiJson(res, 401, { error: "Unauthorised." });
+    return;
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(await readRequestBody(req) || "{}");
+  } catch {
+    sendPrivateApiJson(res, 400, { error: "Invalid JSON body." });
+    return;
+  }
+
+  if (!payload || typeof payload !== "object") {
+    sendPrivateApiJson(res, 400, { error: "Payload required." });
+    return;
+  }
+
+  try {
+    await pool.query(
+      `INSERT INTO merchant_thoughts_state (id, payload)
+      VALUES ('data', $1::jsonb)
+      ON CONFLICT (id)
+      DO UPDATE SET payload = EXCLUDED.payload`,
+      [JSON.stringify(payload)]
+    );
+
+    sendPrivateApiJson(res, 200, { ok: true, data: payload });
+  } catch (error) {
+    console.error("update-merchant-thoughts error:", error.message);
+    sendPrivateApiJson(res, 500, { error: "Merchant thoughts could not be saved." });
+  }
+}
+
 async function handlePromoteMerchant(req, res) {
   if (req.method !== "POST") {
     sendJson(res, 405, { error: "Method not allowed." });
@@ -2760,6 +2842,30 @@ const server = http.createServer((req, res) => {
       console.error("update-desk-entries: unexpected failure:", error);
       if (!res.headersSent) {
         sendPrivateApiJson(res, 500, { error: "Journal entries could not be saved." });
+      } else {
+        res.end();
+      }
+    });
+    return;
+  }
+
+  if (isFunctionRoute(requestPath, "get-merchant-thoughts", ["/data/merchant-thoughts.json"])) {
+    handleGetMerchantThoughts(req, res).catch((error) => {
+      console.error("get-merchant-thoughts: unexpected failure:", error);
+      if (!res.headersSent) {
+        sendJson(res, 500, { error: "Could not read merchant thoughts data." });
+      } else {
+        res.end();
+      }
+    });
+    return;
+  }
+
+  if (isFunctionRoute(requestPath, "update-merchant-thoughts")) {
+    handleUpdateMerchantThoughts(req, res).catch((error) => {
+      console.error("update-merchant-thoughts: unexpected failure:", error);
+      if (!res.headersSent) {
+        sendPrivateApiJson(res, 500, { error: "Merchant thoughts could not be saved." });
       } else {
         res.end();
       }
