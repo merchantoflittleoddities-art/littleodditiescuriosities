@@ -711,7 +711,7 @@ textarea {
   resize: vertical;
 }
 
-.form-group--password {
+.form-group.form-group--password {
   position: relative;
   display: block;
 }
