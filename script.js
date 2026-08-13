@@ -1532,6 +1532,7 @@ function renderShopPage(products) {
       return matchesCollection && matchesTier && matchesSearch;
     });
 
+    shopFilteredProducts = filtered;
     renderProductsGrid(filtered, ".product-grid");
     const counter = document.querySelector("#shop-results-count");
     if (counter) counter.textContent = filtered.length;
@@ -2206,6 +2207,152 @@ function highlightCurrentPage() {
 
 
 // ============================================================
+// Storefront inventory freshness
+// Periodic refresh + refresh on visibility, without a page reload.
+// ============================================================
+
+const INVENTORY_REFRESH_MS = 60 * 1000;
+const INVENTORY_PAGES = new Set(["home", "shop", "collections", "tiers", "product", "cabinet", "checkout"]);
+
+let inventoryRefreshing = false;
+let inventoryRefreshTimer = null;
+let shopFilteredProducts = [];
+
+/**
+ * Re-renders only the inventory-dependent UI for the currently visible page.
+ * Uses the existing renderers so no duplicate rendering logic is introduced.
+ */
+function refreshInventoryUI(pageId) {
+  const products = getAllProducts();
+
+  switch (pageId) {
+    case "home":         refreshHomeInventory();        break;
+    case "shop":         rerenderShopGrid();               break;
+    case "collections":  renderCollectionsPage(products);  break;
+    case "tiers":        renderTiersPage(products);        break;
+    case "product":      renderProductPage(products);      break;
+    case "cabinet":      renderCabinet();                  break;
+    case "checkout":     refreshCheckoutAvailability();    break;
+    default: break;
+  }
+}
+
+/**
+ * Fetches fresh inventory and refreshes only the current page's
+ * inventory-dependent UI.
+ *  - Uses the existing loadInventory() (already cache-busted + no-store).
+ *  - Keeps the last known-good snapshot if the refresh fails.
+ *  - Never fires two overlapping requests.
+ *  - Never performs a full page reload.
+ */
+async function refreshInventory() {
+  const pageId = document.body.dataset.page;
+  if (!INVENTORY_PAGES.has(pageId)) return;   // no inventory UI on this page
+  if (document.hidden) return;                 // nothing to refresh while hidden
+  if (inventoryRefreshing) return;             // prevent overlapping requests
+
+  inventoryRefreshing = true;
+  const previousSnapshot = window.ALL_INVENTORY;
+  const previousVerified  = window.INVENTORY_VERIFIED === true;
+
+  try {
+    await loadInventory();
+
+    // loadInventory() marks a failed load with INVENTORY_VERIFIED = false.
+    // If that happened, restore the last-known-good snapshot instead of
+    // replacing a working storefront with an "unverified" state.
+    if (window.INVENTORY_VERIFIED !== true) {
+      window.ALL_INVENTORY = previousSnapshot;
+      window.INVENTORY_VERIFIED = previousVerified;
+      window.INVENTORY_ERROR = "Inventory refresh failed; showing the last known availability.";
+      return;
+    }
+
+    refreshInventoryUI(pageId);
+  } finally {
+    inventoryRefreshing = false;
+  }
+}
+
+/**
+ * Starts the single periodic refresh timer and the single
+ * visibilitychange listener. Called once at startup.
+ */
+function startInventoryRefresh() {
+  if (inventoryRefreshTimer) return; // ensure exactly one timer + one listener
+
+  inventoryRefreshTimer = setInterval(refreshInventory, INVENTORY_REFRESH_MS);
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") refreshInventory();
+  });
+}
+
+/**
+ * Re-renders just the shop product grid, reusing the merchant's current
+ * filters (stored by renderShopPage). This avoids duplicating the filter
+ * <option> elements or their change listeners.
+ */
+function rerenderShopGrid() {
+  renderProductsGrid(shopFilteredProducts, ".product-grid");
+  const counter = document.querySelector("#shop-results-count");
+  if (counter) counter.textContent = shopFilteredProducts.length;
+}
+
+/**
+ * Refreshes the homepage's inventory-dependent UI only.
+ * Re-renders the featured product card grid and patches the featured
+ * treasure's stock notice in place — deliberately NOT re-running the full
+ * home renderer, which would create duplicate IntersectionObservers.
+ */
+function refreshHomeInventory() {
+  const products = getAllProducts();
+  renderProductsGrid(products.slice(0, 3), ".featured-grid");
+
+  const section = document.querySelector("#featured-treasure");
+  if (!section) return;
+  const chosen  = resolveFeaturedTreasure();
+  const product = chosen && chosen.product;
+  if (!product) return;
+
+  const notice = section.querySelector(".stock-notice");
+  if (!notice) return;
+
+  const state      = getProductAvailabilityState(product.id);
+  const available  = state === "available";
+  const unverified = state === "unverified";
+  notice.textContent = getStorefrontMessage(product.id);
+  notice.className = "stock-notice " +
+    (available ? "stock-notice--available" : (unverified ? "stock-notice--unknown" : "stock-notice--out"));
+}
+
+/**
+ * Keeps the checkout availability note and button in sync after a refresh
+ * without re-rendering the whole checkout page (which would re-bind the
+ * checkout button and reset the selected shipping method).
+ */
+function refreshCheckoutAvailability() {
+  const button = document.querySelector("#checkout-button");
+  if (button) button.disabled = !getSelectedShippingId() || !isInventoryVerified();
+
+  const shipping = document.querySelector("#checkout-shipping-options");
+  if (!shipping) return;
+
+  const note = Array.from(shipping.querySelectorAll("p.muted")).find((p) =>
+    p.textContent.includes("Availability could not be verified"));
+
+  if (!isInventoryVerified() && !note) {
+    const p = document.createElement("p");
+    p.className = "muted";
+    p.style.marginTop = "8px";
+    p.textContent = "Availability could not be verified right now. Checkout is temporarily unavailable.";
+    shipping.appendChild(p);
+  } else if (isInventoryVerified() && note) {
+    note.remove();
+  }
+}
+
+// ============================================================
 // Initialisation — loads all data then routes to the page renderer
 // ============================================================
 
@@ -2284,6 +2431,11 @@ function summonJeff() {
 
 document.addEventListener("DOMContentLoaded", () => {
   initPage();
+
+  // Storefront inventory freshness — periodic + on-visibility refresh
+  if (INVENTORY_PAGES.has(document.body.dataset.page)) {
+    startInventoryRefresh();
+  }
 
   // Mobile navigation toggle
   const menuButton = document.querySelector(".menu-toggle");
