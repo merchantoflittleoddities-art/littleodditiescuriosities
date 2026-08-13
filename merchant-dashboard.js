@@ -212,8 +212,12 @@ async function fetchOrders() {
     throw new Error(data.error || "The ledger could not be consulted.");
   }
 
-  const { orders } = await response.json();
-  return Array.isArray(orders) ? orders : [];
+  const { orders, hasMore, nextCursor } = await response.json();
+  return {
+    orders:     Array.isArray(orders) ? orders : [],
+    hasMore:    !!hasMore,
+    nextCursor: hasMore ? nextCursor : null
+  };
 }
 
 /* ============================================================
@@ -351,6 +355,241 @@ function renderOrderCards(orders, container) {
   }
 
   container.innerHTML = orders.map(buildOrderCard).join("");
+}
+
+/** Build a single spreadsheet-style register row for an order */
+function buildLedgerRow(order) {
+  const status      = getFulfilmentStatus(order.id);
+  const config      = STATUS_CONFIG[status] || STATUS_CONFIG.new;
+  const nextLabel   = STATUS_BUTTON_LABELS[status];
+  const itemsCount  = order.items.reduce((n, i) => n + (Number(i.quantity) || 1), 0);
+
+  const statusCell = `<span class="ledger-status-badge" style="color:${config.color}">${config.emoji} ${config.label}</span>`;
+
+  const advanceBtn = nextLabel
+    ? `<button class="btn-status btn-status-sm" data-action="advance" data-order-id="${order.id}">${nextLabel}</button>`
+    : `<span class="ledger-done">✦ Done</span>`;
+
+  return `
+    <tr data-order-id="${order.id}">
+      <td data-label="Order"><span class="order-badge">#${order.shortId}</span></td>
+      <td data-label="Date">${formatDateShort(order.created)}</td>
+      <td data-label="Customer">${escapeHtml(order.customerName)}</td>
+      <td data-label="Treasures" class="ledger-col-treasures">${itemsCount}</td>
+      <td data-label="Total" class="ledger-col-total">${formatPrice(order.amountTotal, order.currency)}</td>
+      <td data-label="Status" class="ledger-col-status">${statusCell}</td>
+      <td data-label="Actions" class="ledger-col-actions">
+        <button class="btn-secondary btn-status-sm" data-action="view" data-order-id="${order.id}">View</button>
+        ${advanceBtn}
+      </td>
+    </tr>`;
+}
+
+/** Render the order register rows into the ledger <tbody> */
+function renderLedgerRows(orders, tbody) {
+  if (!tbody) return;
+
+  if (!orders.length) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="7" class="ledger-empty">No treasures match the current incantations.</td>
+      </tr>`;
+    return;
+  }
+
+  tbody.innerHTML = orders.map(buildLedgerRow).join("");
+}
+
+/* ── Ledger filter + sort + date helpers ─────────────────────── */
+
+function getDateRangeFilter() {
+  const mode = (document.getElementById("date-filter")?.value || "all");
+
+  if (mode === "today") {
+    const start = new Date(); start.setHours(0, 0, 0, 0);
+    return { from: start.getTime(), to: Infinity };
+  }
+  if (mode === "week") {
+    const start = new Date();
+    start.setDate(start.getDate() - 7); start.setHours(0, 0, 0, 0);
+    return { from: start.getTime(), to: Infinity };
+  }
+  if (mode === "month") {
+    const start = new Date();
+    start.setDate(start.getDate() - 30);
+    start.setHours(0, 0, 0, 0);
+    return { from: start.getTime(), to: Infinity };
+  }
+  if (mode === "custom") {
+    const fromVal = document.getElementById("date-from")?.value;
+    const toVal   = document.getElementById("date-to")?.value;
+    if (!fromVal && !toVal) return null;
+
+    let from = -Infinity;
+    let to   = Infinity;
+    if (fromVal) {
+      const d = new Date(fromVal + "T00:00:00");
+      if (!isNaN(d.getTime())) from = d.getTime();
+    }
+    if (toVal) {
+      const d = new Date(toVal + "T23:59:59");
+      if (!isNaN(d.getTime())) to = d.getTime();
+    }
+    return { from, to };
+  }
+  return null;
+}
+
+function inDateRange(created, range) {
+  if (!range) return true;
+  return created >= range.from && created <= range.to;
+}
+
+function sortOrders(list, sort) {
+  const copy = [...list];
+  switch (sort) {
+    case "oldest":  return copy.sort((a, b) => a.created - b.created);
+    case "highest": return copy.sort((a, b) => b.amountTotal - a.amountTotal);
+    case "lowest":  return copy.sort((a, b) => a.amountTotal - b.amountTotal);
+    case "newest":
+    default:        return copy.sort((a, b) => b.created - a.created);
+  }
+}
+
+/** Apply every active filter + sort to the master order list */
+function applyLedgerFilters() {
+  const query  = (document.getElementById("search-input")?.value || "").trim().toLowerCase();
+  const status = document.getElementById("status-filter")?.value || "";
+  const sort   = document.getElementById("sort-filter")?.value || "newest";
+  const range  = getDateRangeFilter();
+
+  const filtered = allOrders.filter((order) => {
+    const matchesQuery = !query
+      || order.customerName.toLowerCase().includes(query)
+      || order.customerEmail.toLowerCase().includes(query)
+      || order.id.toLowerCase().includes(query)
+      || order.shortId.toLowerCase().includes(query)
+      || (order.paymentIntentId && order.paymentIntentId.toLowerCase().includes(query));
+
+    const matchesStatus = !status || getFulfilmentStatus(order.id) === status;
+    const matchesDate   = inDateRange(order.created, range);
+
+    return matchesQuery && matchesStatus && matchesDate;
+  });
+
+  return sortOrders(filtered, sort);
+}
+
+function buildLedgerHint() {
+  const parts = [];
+  const status = document.getElementById("status-filter")?.value || "";
+  const sort   = document.getElementById("sort-filter")?.value || "newest";
+  const date   = document.getElementById("date-filter")?.value || "all";
+  const query  = (document.getElementById("search-input")?.value || "").trim();
+
+  if (query)  parts.push(`Search “${query}”`);
+  if (status) parts.push(`Status: ${STATUS_CONFIG[status]?.label || status}`);
+  if (date && date !== "all") {
+    const labels = { today: "Today", week: "Last 7 days", month: "Last 30 days", custom: "Custom range" };
+    parts.push(`Date: ${labels[date] || date}`);
+  }
+  const sortLabels = {
+    newest:  "Newest → Oldest",
+    oldest:  "Oldest → Newest",
+    highest: "Highest total first",
+    lowest:  "Lowest total first"
+  };
+  parts.push(`Sort: ${sortLabels[sort] || sort}`);
+
+  return parts.length ? `Filtering — ${parts.join(" · ")}` : "";
+}
+
+function updateLoadOlderButton() {
+  const btn  = document.getElementById("load-older");
+  const hint = document.getElementById("load-older-hint");
+  if (!btn) return;
+
+  if (ledgerHasMore) {
+    btn.disabled   = false;
+    btn.textContent = "📜 Load older orders";
+    if (hint) hint.textContent = "";
+  } else {
+    btn.disabled   = true;
+    btn.textContent = "📜 All orders loaded";
+    if (hint) hint.textContent = ledgerCursor ? "Every page of the ledger has been consulted." : "";
+  }
+}
+
+/** Render the register with all active filters/sorts, update counts + controls */
+function renderLedger() {
+  const list = applyLedgerFilters();
+  renderLedgerRows(list, document.getElementById("orders-list"));
+
+  const total = allOrders.length;
+  setText("orders-count",
+    `${list.length} of ${total} treasure${total === 1 ? "" : "s"} shown`);
+  setText("ledger-hint", buildLedgerHint());
+  updateLoadOlderButton();
+}
+
+/** Re-render every view that depends on order data (table, home recent, stats) */
+function refreshOrderViews() {
+  renderStats(computeStats(allOrders));
+  renderOrderCards(allOrders.slice(0, 6), document.getElementById("recent-orders"));
+  renderLedger();
+}
+
+/** Open the order-detail modal, reusing the full order card for the body */
+function openOrderDetail(order) {
+  const modal = document.getElementById("modal-order-detail");
+  const body  = document.getElementById("modal-order-body");
+  if (!modal || !body) return;
+  body.innerHTML = buildOrderCard(order);
+  modal.classList.remove("hidden");
+}
+
+/** Cursor pagination — append the next server page without losing existing orders */
+async function loadOlderOrders() {
+  if (ledgerLoading || !ledgerHasMore) return;
+  ledgerLoading = true;
+
+  const btn = document.getElementById("load-older");
+  if (btn) { btn.disabled = true; btn.textContent = "📜 Consulting older pages…"; }
+
+  try {
+    const token = getToken();
+    const url   = ledgerCursor
+      ? `${ORDERS_URL}?starting_after=${encodeURIComponent(ledgerCursor)}`
+      : ORDERS_URL;
+
+    const response = await fetch(url, { headers: { "Authorization": `Bearer ${token}` } });
+
+    if (response.status === 401) { clearToken(); showLogin(); return; }
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error || "The older pages could not be consulted.");
+    }
+
+    const data     = await response.json();
+    const incoming = Array.isArray(data.orders) ? data.orders : [];
+
+    const seen = new Set(allOrders.map((o) => o.id));
+    incoming.forEach((o) => {
+      if (!seen.has(o.id)) { seen.add(o.id); allOrders.push(o); }
+    });
+
+    allOrders.sort((a, b) => b.created - a.created);
+
+    ledgerHasMore = !!data.hasMore;
+    ledgerCursor  = data.hasMore ? (data.nextCursor || null) : null;
+
+    refreshOrderViews();
+  } catch (error) {
+    showToast(error.message || "Could not load older orders.");
+  } finally {
+    ledgerLoading = false;
+    updateLoadOlderButton();
+  }
 }
 
 /** Update the stats elements in both the Home and Tallies tabs */
@@ -1595,12 +1834,21 @@ function activateTab(tabName) {
 /** All orders fetched from Stripe — module-level so all renderers share them */
 let allOrders = [];
 
+/** Cursor pagination state for the Merchant's Ledger */
+let ledgerCursor  = null;
+let ledgerHasMore = false;
+let ledgerLoading = false;
+
 /* ============================================================
    Main: render everything once orders are loaded
    ============================================================ */
 
 function renderDashboard(orders) {
   allOrders = [...orders].sort((a, b) => b.created - a.created);
+
+  /* Reset pagination cursor for a fresh initial load */
+  ledgerCursor  = null;
+  ledgerHasMore = false;
 
   /* Home tab date */
   setText("home-date", new Date().toLocaleDateString("en-GB", {
@@ -1613,20 +1861,18 @@ function renderDashboard(orders) {
   /* Recent orders — newest 6 on the home tab */
   renderOrderCards(allOrders.slice(0, 6), document.getElementById("recent-orders"));
 
-  /* Full ledger */
-  renderOrderCards(allOrders, document.getElementById("orders-list"));
-
-  /* Order count label */
-  setText("orders-count",
-    `${allOrders.length} treasure${allOrders.length === 1 ? "" : "s"} in the ledger`);
+  /* Full ledger (applies active filters/sorts) */
+  renderLedger();
 }
 
 async function loadAndRender() {
   showLoading();
   try {
-    const [orders] = await Promise.all([fetchOrders(), fetchFulfilmentStatuses()]);
+    const [data, statuses] = await Promise.all([fetchOrders(), fetchFulfilmentStatuses()]);
     hideLoading();
-    renderDashboard(orders);
+    ledgerHasMore = !!data.hasMore;
+    ledgerCursor  = data.nextCursor || null;
+    renderDashboard(data.orders);
     activateTab("home");
   } catch (error) {
     showError(error.message);
@@ -1742,46 +1988,83 @@ function initDashboardUI() {
   /* CMS module (Featured Treasure & Merchant's Journal) */
   initCmsUI();
 
-  /* Search & filter (ledger tab) */
-  const searchInput    = document.getElementById("search-input");
-  const statusFilter   = document.getElementById("status-filter");
-  const ordersContainer = document.getElementById("orders-list");
+  /* ── Ledger toolbar: search, filters, sort, date, export, pagination ── */
+  const searchInput  = document.getElementById("search-input");
+  const statusFilter = document.getElementById("status-filter");
+  const sortFilter   = document.getElementById("sort-filter");
+  const dateFilter   = document.getElementById("date-filter");
+  const dateRangeRow = document.getElementById("date-range-row");
+  const dateFrom     = document.getElementById("date-from");
+  const dateTo       = document.getElementById("date-to");
 
-  function applyFilter() {
-    const query   = searchInput?.value  || "";
-    const status  = statusFilter?.value || "";
-    const filtered = filterOrders(allOrders, query, status);
-
-    setText("orders-count",
-      `${filtered.length} treasure${filtered.length === 1 ? "" : "s"} found`);
-
-    renderOrderCards(filtered, ordersContainer);
+  function syncDateRangeRow() {
+    if (!dateRangeRow) return;
+    dateRangeRow.classList.toggle("hidden", (dateFilter?.value || "all") !== "custom");
   }
 
-  searchInput?.addEventListener("input", applyFilter);
-  statusFilter?.addEventListener("change", applyFilter);
+  /* Re-render the register on every toolbar change */
+  const rerenderLedger = () => { syncDateRangeRow(); renderLedger(); };
+  searchInput?.addEventListener("input", rerenderLedger);
+  statusFilter?.addEventListener("change", rerenderLedger);
+  sortFilter?.addEventListener("change", rerenderLedger);
+  dateFilter?.addEventListener("change", rerenderLedger);
+  dateFrom?.addEventListener("change", renderLedger);
+  dateTo?.addEventListener("change", renderLedger);
 
-  /* Single delegated listener for fulfilment advance buttons */
+  /* Clear custom date range */
+  document.getElementById("date-range-clear")?.addEventListener("click", () => {
+    if (dateFrom) dateFrom.value = "";
+    if (dateTo)   dateTo.value   = "";
+    if (dateFilter) dateFilter.value = "all";
+    rerenderLedger();
+  });
+
+  /* Delegated: advance fulfilment + open order detail (rows live in .dashboard-main) */
   document.querySelector(".dashboard-main")?.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-action='advance']");
-    if (!button) return;
+    const viewBtn = event.target.closest("[data-action='view']");
+    if (viewBtn) {
+      const order = allOrders.find((o) => o.id === viewBtn.dataset.orderId);
+      if (order) openOrderDetail(order);
+      return;
+    }
 
-    const orderId = button.dataset.orderId;
+    const advanceBtn = event.target.closest("[data-action='advance']");
+    if (!advanceBtn) return;
+
+    const orderId = advanceBtn.dataset.orderId;
     advanceFulfilmentStatus(orderId);
 
-    /* Re-render every card showing this order (home tab + ledger tab may both show it) */
-    const order = allOrders.find((o) => o.id === orderId);
-    if (!order) return;
+    /* Keep the open detail modal in sync if it shows this order */
+    const modalBody = document.getElementById("modal-order-body");
+    const modalOrder = allOrders.find((o) => o.id === orderId);
+    if (modalBody && !document.getElementById("modal-order-detail")?.classList.contains("hidden") && modalBody.querySelector(`.order-card[data-order-id="${orderId}"]`)) {
+      modalBody.innerHTML = buildOrderCard(modalOrder);
+    }
 
-    document.querySelectorAll(`.order-card[data-order-id="${orderId}"]`).forEach((card) => {
-      const temp = document.createElement("div");
-      temp.innerHTML = buildOrderCard(order).trim();
-      card.replaceWith(temp.firstElementChild);
-    });
-
-    /* Refresh stat counts */
-    renderStats(computeStats(allOrders));
+    refreshOrderViews();
   });
+
+  /* Order detail modal controls */
+  const orderModal = document.getElementById("modal-order-detail");
+  document.getElementById("modal-order-close")?.addEventListener("click", () => orderModal?.classList.add("hidden"));
+  document.getElementById("modal-order-close-btn")?.addEventListener("click", () => orderModal?.classList.add("hidden"));
+  orderModal?.addEventListener("click", (event) => {
+    if (event.target === orderModal) orderModal.classList.add("hidden");
+  });
+  /* Advance button inside the modal */
+  orderModal?.addEventListener("click", (event) => {
+    const advanceBtn = event.target.closest("[data-action='advance']");
+    if (!advanceBtn) return;
+    const orderId = advanceBtn.dataset.orderId;
+    advanceFulfilmentStatus(orderId);
+    const modalBody = document.getElementById("modal-order-body");
+    const modalOrder = allOrders.find((o) => o.id === orderId);
+    if (modalBody && modalOrder) modalBody.innerHTML = buildOrderCard(modalOrder);
+    refreshOrderViews();
+  });
+
+  /* Load older orders (cursor pagination) */
+  document.getElementById("load-older")?.addEventListener("click", loadOlderOrders);
 
   /* CSV export */
   document.getElementById("export-csv")?.addEventListener("click", () => {
