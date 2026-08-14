@@ -977,6 +977,58 @@ const HELPFUL_PAGES = [
     ]
   },
   {
+    icon: "📜",
+    title: "Merchant's Terms of Service",
+    url: "terms.html",
+    blurb: "The rules that govern your use of the shop, from placing orders to payments and delivery.",
+    keywords: [
+      "terms", "terms of service", "tos", "conditions", "terms and conditions", "service",
+      "rules", "policies", "policy", "agreement", "legal", "user agreement", "merchant",
+      "merchant terms", "order", "orders", "pricing", "payment", "delivery", "account",
+      "cancellation", "cancellations", "intellectual property", "copyright"
+    ]
+  },
+  {
+    icon: "🕵️",
+    title: "Traveller's Privacy",
+    url: "privacy.html",
+    blurb: "How the Merchant collects, uses, and protects your personal information.",
+    keywords: [
+      "privacy", "privacy policy", "data", "gdpr", "personal data", "personal information",
+      "information", "your data", "my data", "data protection", "cookie", "cookies",
+      "tracking", "analytics", "storage", "localstorage", "sessionstorage", "session",
+      "account", "register", "sign in", "signin", "login", "password", "email", "address",
+      "addresses", "shipping", "order", "orders", "payment", "stripe", "formspree",
+      "contact", "satchel", "wishlist", "rights", "retention", "delete account",
+      "data controller", "third party", "third-party", "resend", "google fonts"
+    ]
+  },
+  {
+    icon: "🚚",
+    title: "Shipping & Delivery",
+    url: "shipping.html",
+    blurb: "Where treasures travel, how shipping costs and free delivery work, and delivery estimates.",
+    keywords: [
+      "shipping", "delivery", "deliver", "dispatch", "postage", "courier", "royal mail",
+      "royal courier", "tracked", "tracking", "free shipping", "free delivery", "free journey",
+      "shipping cost", "shipping costs", "shipping price", "how long", "arrival", "arrive",
+      "estimated", "eta", "uk", "united kingdom", "international", "overseas",
+      "shipping method", "shipping options", "delivery estimate", "lost", "damaged", "delayed"
+    ]
+  },
+  {
+    icon: "🍪",
+    title: "Cookie Information",
+    url: "cookies.html",
+    blurb: "What storage technologies this shop uses — and importantly, what it does not.",
+    keywords: [
+      "cookie", "cookies", "cookie policy", "cookies policy", "localstorage", "sessionstorage",
+      "local storage", "session storage", "browser storage", "storage", "technologies",
+      "tracking", "analytics", "no cookies", "no tracking", "no analytics", "third-party",
+      "third party", "stripe", "formspree", "cart", "session", "token"
+    ]
+  },
+  {
     icon: "💌",
     title: "Send Word to the Merchant",
     url: "contact.html",
