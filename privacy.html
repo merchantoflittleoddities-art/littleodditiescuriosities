@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Traveller's Privacy</title>
+  <link rel="stylesheet" href="style.css?v=2026-08-13-2">
+</head>
+<body data-page="privacy">
+  <header class="site-header">
+    <div class="inner-wrap">
+      <a class="brand" href="index.html">
+        <div class="site-logo" aria-label="Site logo">
+          <img class="site-logo-image" src="" alt="">
+          <div class="site-logo-placeholder" aria-hidden="true">✦</div>
+        </div>
+        <div>
+          <p class="eyebrow site-brand-name"></p>
+          <h1>Little Oddities Curiosities</h1>
+        </div>
+      </a>
+      <nav class="nav-links">
+        <a href="index.html">Home</a>
+        <a href="shop.html">Shop</a>
+        <a href="collections.html">Collections</a>
+        <a href="tiers.html">Treasure Tiers</a>
+        <a href="about.html">Meet the Merchant</a>
+        <a href="reviews.html">Traveller Reviews</a>
+        <a href="merchants-guide.html">Merchant's Guide</a>
+        <a href="contact.html">Send Word to the Merchant</a>
+        <a href="account.html" class="account-nav-link">Traveller's Keepings</a>
+        <a href="/merchant-dashboard" class="merchant-nav-link hidden">✨ Merchant's Ledger</a>
+        <a href="cabinet.html">Curiosity Cabinet <span class="cart-count">0</span></a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="page-content">
+
+    <section class="section-intro">
+      <h2>The Traveller's Privacy</h2>
+      <p class="muted">
+        A note from the Merchant about the information shared on your journey. This
+        page explains what is collected, why, and your rights.
+      </p>
+    </section>
+
+    <section class="section-intro">
+      <article class="card">
+        <h3>Who the Merchant is</h3>
+        <p>
+          Little Oddities Curiosities is the data controller for this website. The
+          Merchant can be reached through
+          <a href="contact.html">Send Word to the Merchant</a> or via the Merchant's
+          Instagram.
+        </p>
+      </article>
+    </section>
+
+    <section class="section-intro">
+      <article class="card">
+        <h3>Information collected on a casual visit</h3>
+        <p>
+          The shop works without you handing over any personal information. Your
+          Curiosity Cabinet (the items you set aside while browsing) is stored in
+          your browser's <strong>localStorage</strong> so it stays with you between
+          pages during your visit. This is kept only on your device and is not sent
+          to the Merchant's server. Clearing your browser data will remove it.
+        </p>
+      </article>
+    </section>
+
+    <section class="section-intro">
+      <article class="card">
+        <h3>Information collected when you create an account</h3>
+        <p>
+          Creating a "Recognised Traveller" account is optional. When you do, the
+          Merchant collects:
+        </p>
+        <ul>
+          <li>Your traveller name</li>
+          <li>Your email address</li>
+          <li>A password (stored as a salted hash — never in plain text)</li>
+          <li>Your notification preferences (whether to be notified of Merchant's Messages about your orders)</li>
+        </ul>
+        <p><strong>Why:</strong> to identify you, keep your account secure, and send you order updates if you opt in.</p>
+        <p><strong>Lawful basis:</strong> performance of a contract (your account) and your consent for optional notifications.</p>
+        <p><strong>Who receives it:</strong> the Merchant's PostgreSQL database (G7Cloud), which hosts the customer store.</p>
+        <p>
+          If you forget your password, the Merchant's server sends a reset link to
+          your email address using <strong>Resend</strong> (a secure email service),
+          but only when the Merchant has configured the Resend API key and sender
+          address. No other shop or order emails are sent through Resend.
+        </p>
+        <p><strong>Why:</strong> to let you recover access to your account.</p>
+        <p><strong>Lawful basis:</strong> performance of a contract (account security).</p>
+        <p><strong>Who receives it:</strong> Resend (as the email delivery service) and your email provider.</p>
+      </article>
+    </section>
+
+    <section class="section-intro">
+      <article class="card">
+        <h3>Information collected during checkout</h3>
+        <p>
+          To place an order you provide:
+        </p>
+        <ul>
+          <li>Your traveller name</li>
+          <li>Your email address</li>
+          <li>Your chosen shipping method</li>
+        </ul>
+        <p>
+          Payment card details are never entered on or handled by this website.
+          After you choose to proceed, you are redirected to
+          <strong>Stripe</strong>, which securely collects and processes your
+          payment. The Merchant receives only the minimum information needed to
+          fulfil your order — the contents of your basket, your shipping method,
+          and the Stripe Checkout Session ID.
+        </p>
+        <p><strong>Why:</strong> to process and fulfil your order.</p>
+        <p><strong>Lawful basis:</strong> performance of a contract (your purchase).</p>
+        <p><strong>Who receives it:</strong> Stripe (for payment processing) and the Merchant's PostgreSQL database (G7Cloud, for order records).</p>
+      </article>
+    </section>
+
+    <section class="section-intro">
+      <article class="card">
+        <h3>Saved delivery addresses (the Traveller's Map)</h3>
+        <p>
+          You may save delivery addresses in your Keepings under "Traveller's Map".
+          Each address includes: a label, address line 1, address line 2 (optional),
+          city, region/county, postcode, and country. These are stored so you do not
+          need to retype them each time you order.
+        </p>
+        <p><strong>Why:</strong> to speed up checkout with your preferred delivery landmarks.</p>
+        <p><strong>Lawful basis:</strong> performance of a contract and your consent.</p>
+        <p><strong>Who receives it:</strong> the Merchant's PostgreSQL database (G7Cloud).</p>
+        <p>
+          You can view, edit, or remove these addresses at any time in your
+          <a href="account.html">Traveller's Keepings</a>.
+        </p>
+      </article>
+    </section>
+
+    <section class="section-intro">
+      <article class="card">
+        <h3>Saved treasures (the Traveller's Satchel / Wishlist)</h3>
+        <p>
+          If you have an account, you can save treasures to your Satchel. The
+          Merchant stores only the product IDs of the treasures you have saved,
+          linked to your account.
+        </p>
+        <p><strong>Why:</strong> to remember which treasures you have set aside.</p>
+        <p><strong>Lawful basis:</strong> your consent.</p>
+        <p><strong>Who receives it:</strong> the Merchant's PostgreSQL database (G7Cloud).</p>
+      </article>
+    </section>
+
+    <section class="section-intro">
+      <article class="card">
+        <h3>Order history (Merchant's Messages)</h3>
+        <p>
+          Once you have placed an order, your order details — what you bought, when,
+          the total, and the fulfilment status — are made available in your
+          <a href="account.html">Traveller's Keepings</a> under "Merchant's Messages".
+          This is read directly from Stripe Checkout Sessions tied to your email.
+        </p>
+        <p><strong>Why:</strong> to show you the status of your treasures.</p>
+        <p><strong>Lawful basis:</strong> performance of a contract.</p>
+        <p><strong>Who receives it:</strong> Stripe (which stores the original checkout session) and the Merchant's PostgreSQL database (G7Cloud, for order status records).</p>
+      </article>
+    </section>
+
+    <section class="section-intro">
+      <article class="card">
+        <h3>Send Word to the Merchant</h3>
+        <p>
+          When you send a letter through the
+          <a href="contact.html">contact form</a>, the Merchant collects the name,
+          email address, subject, and message you write. These are delivered to the
+          Merchant via <strong>Formspree</strong>, which forwards them to the
+          Merchant so a reply can be sent in due course.
+        </p>
+        <p><strong>Why:</strong> to respond to your question or request.</p>
+        <p><strong>Lawful basis:</strong> your consent and legitimate interests (responding to inquiries).</p>
+        <p><strong>Who receives it:</strong> Formspree (as the email delivery service) and the Merchant directly.</p>
+      </article>
+    </section>
+
+    <section class="section-intro">
+      <article class="card">
+        <h3>Current third-party services</h3>
+        <p>
+          The shop works with the following services, each serving a specific purpose:
+        </p>
+        <ul>
+          <li><strong>Stripe</strong> — securely processes payments at checkout. Card details are entered on Stripe's hosted page and are never handled by the shop itself.</li>
+          <li><strong>Formspree</strong> — delivers letters sent through the contact form to the Merchant.</li>
+          <li><strong>Resend</strong> — sends password-reset emails to account holders (when configured).</li>
+          <li><strong>G7Cloud PostgreSQL</strong> — hosts the Merchant's database of customer accounts, addresses, wishlist items, and order status records.</li>
+          <li><strong>Google Fonts</strong> — on certain pages (the shop front, Merchant's Guide, and account pages), the Merchant loads the Caveat font from <code>fonts.googleapis.com</code> and <code>fonts.gstatic.com</code> to write in the Merchant's own hand. This is a font-delivery service and is not used for analytics or tracking.</li>
+        </ul>
+      </article>
+    </section>
+
+    <section class="section-intro">
+      <article class="card">
+        <h3>Technical information</h3>
+        <p>
+          The Merchant's server logs store the time and date of requests, along with
+          the IP address and browser information, in so far as it is needed to keep
+          the shop running and secure. This is standard server logging.
+        </p>
+        <p><strong>Why:</strong> to operate and secure the shop.</p>
+        <p><strong>Lawful basis:</strong> legitimate interests (operating the website securely).</p>
+      </article>
+    </section>
+
+    <section class="section-intro">
+      <article class="card">
+        <h3>Browser storage and cookies</h3>
+        <p>
+          The shop uses <strong>localStorage</strong> and <strong>sessionStorage</strong> in your browser for:
+        </p>
+        <ul>
+          <li>The <strong>Curiosity Cabinet</strong> cart contents (localStorage, so it persists between visits).</li>
+          <li>Account session tokens: your login token and basic customer info are stored in <strong>sessionStorage</strong> (lost when you close the tab) or <strong>localStorage</strong> (if you check "Remember this Traveller"), so you stay signed in.</li>
+        </ul>
+        <p>
+          The shop does <strong>not</strong> use analytics, advertising trackers, or
+          third-party cookies for tracking. See
+          <a href="cookies.html">Cookie Information</a> for the full picture.
+        </p>
+        <p><strong>Lawful basis:</strong> legitimate interests (functional necessity) and your consent (for "Remember this Traveller").</p>
+      </article>
+    </section>
+
+    <section class="section-intro">
+      <article class="card">
+        <h3>How long the Merchant keeps your information</h3>
+        <p>
+          The Merchant keeps your information only for as long as it is needed:
+        </p>
+        <ul>
+          <li><strong>Cart contents:</strong> until you check out or clear your Curiosity Cabinet (stored only in your browser).</li>
+          <li><strong>Accounts:</strong> for as long as the account remains open.</li>
+          <li><strong>Order records:</strong> retained to fulfil and follow up on your orders, and as required for tax/financial records.</li>
+          <li><strong>Addresses &amp; Satchel items:</strong> until you remove them or close your account.</li>
+        </ul>
+        <p>
+          You can delete your own account at any time in your
+          <a href="account.html">Traveller's Keepings</a>, which removes your account
+          and all associated personal data.
+        </p>
+      </article>
+    </section>
+
+    <section class="section-intro">
+      <article class="card">
+        <h3>Your rights</h3>
+        <p>
+          Under data protection law (including the UK GDPR), you have the right to:
+        </p>
+        <ul>
+          <li>Be informed about how your data is used (this page).</li>
+          <li>Ask for a copy of the personal data the Merchant holds about you.</li>
+          <li>Ask for inaccurate data to be corrected.</li>
+          <li>Ask for your data to be deleted (subject to legal obligations).</li>
+          <li>Object to or restrict certain processing.</li>
+          <li>Withdraw consent at any time (for example, by turning off notifications in your Preferences).</li>
+        </ul>
+        <p>
+          To exercise any of these rights, please
+          <a href="contact.html">Send Word to the Merchant</a>.
+        </p>
+      </article>
+    </section>
+
+    <section class="section-intro">
+      <article class="card">
+        <h3>Complaints</h3>
+        <p>
+          If you believe your data has been mishandled, you have the right to lodge
+          a complaint with the Information Commissioner's Office (ICO), the UK's
+          data protection supervisory authority. You may also complain to your local
+          data protection authority if you are based outside the UK.
+        </p>
+      </article>
+    </section>
+
+    <section class="section-intro">
+      <article class="card">
+        <h3>Changes to this notice</h3>
+        <p>
+          The Merchant may update this notice. Any changes will be posted here with
+          an updated "last updated" reference.
+        </p>
+      </article>
+    </section>
+
+    <section class="section-intro">
+      <article class="card">
+        <h3>Need help?</h3>
+        <p>
+          For any question about privacy or your data, please
+          <a class="button button-primary" href="contact.html">Send Word to the Merchant</a>.
+        </p>
+      </article>
+    </section>
+
+  </main>
+
+  <footer class="site-footer">
+    <div class="inner-wrap">
+      <p>Every treasure has a story ✦</p>
+      <p>Instagram: <a class="social-instagram-link" href="#" target="_blank" rel="noreferrer"></a></p>
+      <p class="site-copyright"></p>
+      <div class="legal-footer-links">
+        <p class="legal-footer-title">📜 Merchant's Scrolls</p>
+        <p>
+          <a href="terms.html">Merchant's Terms of Service</a>
+        </p>
+        <p>
+          <a href="privacy.html">Traveller's Privacy</a>
+        </p>
+        <p>
+          <a href="returns.html">Merchant's Returns &amp; Refunds</a>
+        </p>
+        <p>
+          <a href="shipping.html">Shipping &amp; Delivery</a>
+        </p>
+        <p>
+          <a href="cookies.html">Cookie Information</a>
+        </p>
+      </div>
+    </div>
+  </footer>
+  <script src="script.js?v=2026-08-13-2" defer></script>
+</body>
+</html>

@@ -838,6 +838,34 @@ textarea {
   color: var(--accent);
 }
 
+.legal-footer-links {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(197, 161, 90, 0.12);
+  font-size: 0.85rem;
+}
+
+.legal-footer-title {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.legal-footer-links p {
+  margin: 2px 0;
+}
+
+.legal-footer-links a {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.legal-footer-links a:hover {
+  color: var(--accent);
+}
+
 .toast-notice {
   position: fixed;
   left: 50%;
