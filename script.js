@@ -1698,7 +1698,7 @@ function renderTiersPage(products) {
 
   if (!selectedTier) {
     if (!tierIntro || !listContainer) return;
-    tierIntro.innerHTML = `<h2>✦ Treasure Tiers ✦</h2><p>Choose the tier that matches your mood and discover the right level of wonder.</p>`;
+    tierIntro.innerHTML = `<h2>✦ Treasure Tiers ✦</h2><p>Choose the tier that matches your mood and discover the right level of wonder.</p><p><a class="button button-secondary" href="collections.html">Explore Collections</a></p>`;
 
     listContainer.innerHTML = tiers
       .map((tier) => {
@@ -2516,6 +2516,57 @@ document.addEventListener("DOMContentLoaded", () => {
       link.addEventListener("click", () => {
         navigation.classList.remove("show");
         menuButton.textContent = "☰";
+      });
+    });
+  }
+
+  // Desktop compact dropdown navigation
+  const dropdownTrigger = document.querySelector(".nav-dropdown-trigger");
+
+  if (dropdownTrigger && navigation) {
+    const openDropdown = () => {
+      navigation.classList.add("show");
+      dropdownTrigger.setAttribute("aria-expanded", "true");
+    };
+
+    const closeDropdown = () => {
+      navigation.classList.remove("show");
+      dropdownTrigger.setAttribute("aria-expanded", "false");
+    };
+
+    const toggleDropdown = () => {
+      if (navigation.classList.contains("show")) {
+        closeDropdown();
+      } else {
+        openDropdown();
+      }
+    };
+
+    dropdownTrigger.addEventListener("click", (event) => {
+      event.stopPropagation();
+      toggleDropdown();
+    });
+
+    dropdownTrigger.addEventListener("keydown", (event) => {
+      if (event.key === " " || event.key === "Enter") {
+        event.preventDefault();
+        toggleDropdown();
+      }
+      if (event.key === "Escape") {
+        closeDropdown();
+        dropdownTrigger.focus();
+      }
+    });
+
+    document.addEventListener("click", (event) => {
+      if (!dropdownTrigger.contains(event.target) && !navigation.contains(event.target)) {
+        closeDropdown();
+      }
+    });
+
+    navigation.querySelectorAll("a").forEach((link) => {
+      link.addEventListener("click", () => {
+        closeDropdown();
       });
     });
   }
