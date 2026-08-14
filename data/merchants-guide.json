@@ -34,10 +34,16 @@
       "displayOrder": 5
     },
     {
+      "id": "returns-refunds",
+      "question": "What if I want to return a treasure or change my mind?",
+      "answer": "Everything you need to know about your right to cancel, returning a treasure, and how refunds work can be found in <a href=\"returns.html\">The Merchant's Returns &amp; Refunds</a>. Still need help? Send Word to the Merchant with your order number.",
+      "displayOrder": 6
+    },
+    {
       "id": "gift",
       "question": "Can I send a treasure as a gift?",
       "answer": "Absolutely. Simply enter the recipient's delivery address during checkout. If you would like the Merchant to know your treasure is a gift, you may also leave a note during checkout and it will be prepared with extra care.",
-      "displayOrder": 6
+      "displayOrder": 7
     }
   ]
 }

@@ -533,6 +533,11 @@ img {
   transition: transform 0.2s ease, background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
 }
 
+/* Inline "Send Word to the Merchant" button in the returns "Need help?" sentence. */
+body[data-page="returns"] .button {
+  vertical-align: middle;
+}
+
 .button:hover {
   transform: translateY(-1px);
 }
