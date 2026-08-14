@@ -304,6 +304,28 @@ img {
   color: var(--muted);
 }
 
+/* Concise pre-purchase cancellation notice (Curiosity Cabinet) */
+.cancellation-notice {
+  margin-top: 1.25rem;
+  border-left: 3px solid var(--accent);
+}
+.cancellation-notice h3 {
+  margin-top: 0;
+}
+.cancellation-notice p {
+  margin: 0 0 0.5rem;
+}
+.cancellation-notice p:last-child {
+  margin-bottom: 0;
+}
+.cancellation-notice a {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.cancellation-notice-more a {
+  font-weight: 600;
+}
+
 .merchant-guide-intro {
   max-width: 760px;
   margin: 0 auto 2.5rem;

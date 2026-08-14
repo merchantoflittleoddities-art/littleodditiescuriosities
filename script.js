@@ -964,6 +964,19 @@ const HELPFUL_PAGES = [
     ]
   },
   {
+    icon: "↩️",
+    title: "The Merchant's Returns & Refunds",
+    url: "returns.html",
+    blurb: "What to do about changed minds, returns, refunds, damaged or faulty treasures and lost deliveries.",
+    keywords: [
+      "return", "returns", "returning", "refund", "refunds", "exchange", "exchanges", "cancel",
+      "cancellation", "change of mind", "changed my mind", "worn", "diminished value",
+      "faulty", "damaged", "broken", "defective", "wrong item", "incorrect", "lost", "parcel",
+      "delivery", "money back", "policy", "policies", "terms", "right to cancel", "statutory rights",
+      "returns and refunds", "returns & refunds", "returns policy"
+    ]
+  },
+  {
     icon: "💌",
     title: "Send Word to the Merchant",
     url: "contact.html",
