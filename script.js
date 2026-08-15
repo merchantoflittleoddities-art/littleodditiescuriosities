@@ -1698,7 +1698,7 @@ function renderTiersPage(products) {
 
   if (!selectedTier) {
     if (!tierIntro || !listContainer) return;
-    tierIntro.innerHTML = `<h2>✦ Treasure Tiers ✦</h2><p>Choose the tier that matches your mood and discover the right level of wonder.</p><p><a class="button button-secondary" href="collections.html">Explore Collections</a></p>`;
+    tierIntro.innerHTML = `<h2>✦ Treasure Tiers ✦</h2><p>Choose the tier that matches your mood and discover the right level of wonder.</p><p class="collection-context-link">🌙 Curious about our collections?</p><p>Discover the story-driven themes that bring our treasures together. <a href="collections.html">Explore Collections →</a></p>`;
 
     listContainer.innerHTML = tiers
       .map((tier) => {
@@ -2502,9 +2502,57 @@ document.addEventListener("DOMContentLoaded", () => {
     startInventoryRefresh();
   }
 
-  // Mobile navigation toggle
-  const menuButton = document.querySelector(".menu-toggle");
+  // Desktop navigation dropdown toggle (▼/▲)
+  const dropdownTrigger = document.querySelector(".nav-dropdown-trigger");
   const navigation = document.querySelector(".nav-links");
+
+  if (dropdownTrigger && navigation) {
+    const updateTriggerText = () => {
+      dropdownTrigger.textContent = navigation.classList.contains("show") ? "▲" : "▼";
+      dropdownTrigger.setAttribute("aria-expanded", navigation.classList.contains("show"));
+    };
+
+    dropdownTrigger.addEventListener("click", () => {
+      navigation.classList.toggle("show");
+      updateTriggerText();
+    });
+
+    dropdownTrigger.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        navigation.classList.toggle("show");
+        updateTriggerText();
+      }
+      if (e.key === "Escape") {
+        navigation.classList.remove("show");
+        updateTriggerText();
+      }
+    });
+
+    document.addEventListener("click", (e) => {
+      if (!navigation.contains(e.target) && !dropdownTrigger.contains(e.target)) {
+        navigation.classList.remove("show");
+        updateTriggerText();
+      }
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        navigation.classList.remove("show");
+        updateTriggerText();
+      }
+    });
+
+    navigation.querySelectorAll("a").forEach((link) => {
+      link.addEventListener("click", () => {
+        navigation.classList.remove("show");
+        updateTriggerText();
+      });
+    });
+  }
+
+  // Mobile navigation toggle (burger)
+  const menuButton = document.querySelector(".menu-toggle");
 
   if (menuButton && navigation) {
     menuButton.addEventListener("click", () => {
@@ -2516,57 +2564,6 @@ document.addEventListener("DOMContentLoaded", () => {
       link.addEventListener("click", () => {
         navigation.classList.remove("show");
         menuButton.textContent = "☰";
-      });
-    });
-  }
-
-  // Desktop compact dropdown navigation
-  const dropdownTrigger = document.querySelector(".nav-dropdown-trigger");
-
-  if (dropdownTrigger && navigation) {
-    const openDropdown = () => {
-      navigation.classList.add("show");
-      dropdownTrigger.setAttribute("aria-expanded", "true");
-    };
-
-    const closeDropdown = () => {
-      navigation.classList.remove("show");
-      dropdownTrigger.setAttribute("aria-expanded", "false");
-    };
-
-    const toggleDropdown = () => {
-      if (navigation.classList.contains("show")) {
-        closeDropdown();
-      } else {
-        openDropdown();
-      }
-    };
-
-    dropdownTrigger.addEventListener("click", (event) => {
-      event.stopPropagation();
-      toggleDropdown();
-    });
-
-    dropdownTrigger.addEventListener("keydown", (event) => {
-      if (event.key === " " || event.key === "Enter") {
-        event.preventDefault();
-        toggleDropdown();
-      }
-      if (event.key === "Escape") {
-        closeDropdown();
-        dropdownTrigger.focus();
-      }
-    });
-
-    document.addEventListener("click", (event) => {
-      if (!dropdownTrigger.contains(event.target) && !navigation.contains(event.target)) {
-        closeDropdown();
-      }
-    });
-
-    navigation.querySelectorAll("a").forEach((link) => {
-      link.addEventListener("click", () => {
-        closeDropdown();
       });
     });
   }
