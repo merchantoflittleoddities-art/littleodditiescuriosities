@@ -2502,14 +2502,34 @@ document.addEventListener("DOMContentLoaded", () => {
     startInventoryRefresh();
   }
 
-  // Desktop navigation dropdown toggle (▼/▲)
+  // ── Shared navigation elements ────────────────────────────
   const dropdownTrigger = document.querySelector(".nav-dropdown-trigger");
-  const navigation = document.querySelector(".nav-links");
+  const menuButton      = document.querySelector(".menu-toggle");
+  const navigation      = document.querySelector(".nav-links");
 
+  // ── Shared link cleanup ───────────────────────────────────
+  const closeNav = () => {
+    navigation.classList.remove("show");
+    if (dropdownTrigger) {
+      dropdownTrigger.textContent = "▼";
+      dropdownTrigger.setAttribute("aria-expanded", "false");
+    }
+    if (menuButton) {
+      menuButton.textContent = "☰";
+    }
+  };
+
+  if (navigation) {
+    navigation.querySelectorAll("a").forEach((link) => {
+      link.addEventListener("click", closeNav);
+    });
+  }
+
+  // ── Desktop navigation ────────────────────────────────────
   if (dropdownTrigger && navigation) {
     const updateTriggerText = () => {
       dropdownTrigger.textContent = navigation.classList.contains("show") ? "▲" : "▼";
-      dropdownTrigger.setAttribute("aria-expanded", navigation.classList.contains("show"));
+      dropdownTrigger.setAttribute("aria-expanded", String(navigation.classList.contains("show")));
     };
 
     dropdownTrigger.addEventListener("click", () => {
@@ -2524,47 +2544,28 @@ document.addEventListener("DOMContentLoaded", () => {
         updateTriggerText();
       }
       if (e.key === "Escape") {
-        navigation.classList.remove("show");
-        updateTriggerText();
+        closeNav();
       }
     });
 
     document.addEventListener("click", (e) => {
-      if (!navigation.contains(e.target) && !dropdownTrigger.contains(e.target)) {
-        navigation.classList.remove("show");
-        updateTriggerText();
+      if (!navigation.contains(e.target) && !dropdownTrigger.contains(e.target) && !e.target.closest(".menu-toggle")) {
+        closeNav();
       }
     });
 
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
-        navigation.classList.remove("show");
-        updateTriggerText();
+        closeNav();
       }
-    });
-
-    navigation.querySelectorAll("a").forEach((link) => {
-      link.addEventListener("click", () => {
-        navigation.classList.remove("show");
-        updateTriggerText();
-      });
     });
   }
 
-  // Mobile navigation toggle (burger)
-  const menuButton = document.querySelector(".menu-toggle");
-
+  // ── Mobile navigation ─────────────────────────────────────
   if (menuButton && navigation) {
     menuButton.addEventListener("click", () => {
       navigation.classList.toggle("show");
       menuButton.textContent = navigation.classList.contains("show") ? "✕" : "☰";
-    });
-
-    navigation.querySelectorAll("a").forEach((link) => {
-      link.addEventListener("click", () => {
-        navigation.classList.remove("show");
-        menuButton.textContent = "☰";
-      });
     });
   }
 
