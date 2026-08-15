@@ -1026,8 +1026,10 @@ textarea {
 
 @media (max-width: 768px) {
 
-  /* Hide desktop compact controls on mobile */
-  .header-controls {
+  /* Hide desktop-only children; keep burger visible */
+  .header-subtitle,
+  .header-nav-icon,
+  .nav-dropdown-trigger {
     display: none;
   }
 
