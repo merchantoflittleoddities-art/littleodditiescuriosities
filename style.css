@@ -1017,10 +1017,11 @@ textarea {
 
 @media (max-width: 768px) {
 
-  /* Hide desktop-only controls; show mobile burger */
-  .site-header .desktop-controls,
-  .site-header .nav-dropdown-trigger,
-  .site-header .header-nav-icon { display: none !important; }
+  /* Hide desktop-only dropdown trigger; keep desktop-controls container visible
+     so Home/Search icons can show on mobile alongside the burger */
+  .site-header .nav-dropdown-trigger { display: none !important; }
+
+  .site-header .header-nav-icon { display: inline-flex !important; }
 
   .site-header .menu-toggle { display: inline-flex; }
 
