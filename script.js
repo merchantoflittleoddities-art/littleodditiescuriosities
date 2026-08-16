@@ -2502,72 +2502,96 @@ document.addEventListener("DOMContentLoaded", () => {
     startInventoryRefresh();
   }
 
-  // ── Shared navigation elements ────────────────────────────
-  const dropdownTrigger = document.querySelector(".nav-dropdown-trigger");
-  const menuButton      = document.querySelector(".menu-toggle");
-  const navigation      = document.querySelector(".nav-links");
-
-  // ── Shared link cleanup ───────────────────────────────────
-  const closeNav = () => {
-    navigation.classList.remove("show");
-    if (dropdownTrigger) {
-      dropdownTrigger.textContent = "▼";
-      dropdownTrigger.setAttribute("aria-expanded", "false");
-    }
-    if (menuButton) {
-      menuButton.textContent = "☰";
+  // ── Desktop navigation owner ──────────────────────────────
+  const desktopNav = {
+    close() {
+      const trigger = document.querySelector(".nav-dropdown-trigger");
+      const nav = document.querySelector(".nav-links");
+      if (!trigger || !nav) return;
+      nav.classList.remove("desktop-open");
+      trigger.textContent = "▼";
+      trigger.setAttribute("aria-expanded", "false");
     }
   };
 
-  if (navigation) {
-    navigation.querySelectorAll("a").forEach((link) => {
-      link.addEventListener("click", closeNav);
-    });
-  }
+  function initDesktopNav() {
+    const trigger = document.querySelector(".nav-dropdown-trigger");
+    const nav = document.querySelector(".nav-links");
+    if (!trigger || !nav) return;
 
-  // ── Desktop navigation ────────────────────────────────────
-  if (dropdownTrigger && navigation) {
-    const updateTriggerText = () => {
-      dropdownTrigger.textContent = navigation.classList.contains("show") ? "▲" : "▼";
-      dropdownTrigger.setAttribute("aria-expanded", String(navigation.classList.contains("show")));
+    const openDesktop = () => {
+      nav.classList.add("desktop-open");
+      trigger.textContent = "▲";
+      trigger.setAttribute("aria-expanded", "true");
     };
 
-    dropdownTrigger.addEventListener("click", () => {
-      navigation.classList.toggle("show");
-      updateTriggerText();
-    });
+    const closeDesktop = () => desktopNav.close();
 
-    dropdownTrigger.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        navigation.classList.toggle("show");
-        updateTriggerText();
-      }
-      if (e.key === "Escape") {
-        closeNav();
-      }
+    const toggleDesktop = () => {
+      if (nav.classList.contains("desktop-open")) closeDesktop();
+      else openDesktop();
+    };
+
+    trigger.addEventListener("click", toggleDesktop);
+    trigger.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleDesktop(); }
     });
 
     document.addEventListener("click", (e) => {
-      if (!navigation.contains(e.target) && !dropdownTrigger.contains(e.target) && !e.target.closest(".menu-toggle")) {
-        closeNav();
-      }
-    });
-
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") {
-        closeNav();
+      if (nav.classList.contains("desktop-open") && !nav.contains(e.target) && !trigger.contains(e.target)) {
+        closeDesktop();
       }
     });
   }
 
-  // ── Mobile navigation ─────────────────────────────────────
-  if (menuButton && navigation) {
-    menuButton.addEventListener("click", () => {
-      navigation.classList.toggle("show");
-      menuButton.textContent = navigation.classList.contains("show") ? "✕" : "☰";
+  // ── Mobile navigation owner ───────────────────────────────
+  const mobileNav = {
+    close() {
+      const button = document.querySelector(".menu-toggle");
+      const nav = document.querySelector(".nav-links");
+      if (!button || !nav) return;
+      nav.classList.remove("mobile-open");
+      button.textContent = "☰";
+      button.setAttribute("aria-expanded", "false");
+      button.setAttribute("aria-label", "Open navigation");
+    }
+  };
+
+  function initMobileNav() {
+    const button = document.querySelector(".menu-toggle");
+    const nav = document.querySelector(".nav-links");
+    if (!button || !nav) return;
+
+    const openMobile = () => {
+      nav.classList.add("mobile-open");
+      button.textContent = "✕";
+      button.setAttribute("aria-expanded", "true");
+      button.setAttribute("aria-label", "Close navigation");
+    };
+
+    const closeMobile = () => mobileNav.close();
+
+    button.addEventListener("click", () => {
+      if (nav.classList.contains("mobile-open")) closeMobile();
+      else openMobile();
+    });
+
+    nav.querySelectorAll("a").forEach((link) => {
+      link.addEventListener("click", closeMobile);
     });
   }
+
+  // ── Shared Escape handler ─────────────────────────────────
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    const nav = document.querySelector(".nav-links");
+    if (!nav) return;
+    if (nav.classList.contains("mobile-open")) mobileNav.close();
+    if (nav.classList.contains("desktop-open")) desktopNav.close();
+  });
+
+  initDesktopNav();
+  initMobileNav();
 
   document.querySelectorAll(".jeff-trigger").forEach((trigger) => {
     trigger.addEventListener("click", (event) => {
