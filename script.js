@@ -1788,6 +1788,25 @@ function renderProductPage(products) {
     ? "Available"
     : (unverified ? "Availability temporarily unavailable" : "Currently unavailable");
 
+  const sizeNames = [
+    "Miniature Sprout",
+    "Vines",
+    "Mushrooms",
+    "Forest Floor",
+    "Wicked Branches"
+  ];
+
+  const sizeSelector = `
+    <div class="size-selector">
+      <label for="bracelet-size">Bracelet Size</label>
+      <select id="bracelet-size" name="bracelet-size">
+        <option value="" disabled selected>Please choose a size</option>
+        ${sizeNames.map((s) => `<option value="${s}">${s}</option>`).join("")}
+      </select>
+      <p class="size-selector-hint muted">A sizing guide is coming soon.</p>
+    </div>
+  `;
+
   const settings = window.SETTINGS || DEFAULT_SETTINGS;
   const satchelButton = settings.website?.showWishlist
     ? `<button class="button button-secondary" type="button" data-satchel="${product.id}" data-saved="false">🤍 Save to Satchel</button>`
@@ -1816,6 +1835,7 @@ function renderProductPage(products) {
           <ul>${product.materials.map((m) => `<li>${m}</li>`).join("")}</ul>
           <h3>Packaging</h3>
           <p>${packagingText}</p>
+          ${sizeSelector}
           <div class="detail-actions">
             ${addCabinetButton}
             <a class="button button-secondary" href="cabinet.html">View Cabinet</a>
