@@ -364,6 +364,15 @@ function buildLedgerRow(order) {
   const nextLabel   = STATUS_BUTTON_LABELS[status];
   const itemsCount  = order.items.reduce((n, i) => n + (Number(i.quantity) || 1), 0);
 
+  /* Item names already carry "(Size: …)" from Stripe's line-item description,
+     so no backend change is needed — surface them beneath the count for quick
+     scanning in the register. */
+  const itemsSummary = order.items.length
+    ? order.items.map((i) =>
+        `${escapeHtml(i.name)} ×${Number(i.quantity) || 1}`
+    ).join("<br>")
+    : "";
+
   const statusCell = `<span class="ledger-status-badge" style="color:${config.color}">${config.emoji} ${config.label}</span>`;
 
   const advanceBtn = nextLabel
@@ -375,7 +384,7 @@ function buildLedgerRow(order) {
       <td data-label="Order"><span class="order-badge">#${order.shortId}</span></td>
       <td data-label="Date">${formatDateShort(order.created)}</td>
       <td data-label="Customer">${escapeHtml(order.customerName)}</td>
-      <td data-label="Treasures" class="ledger-col-treasures">${itemsCount}</td>
+      <td data-label="Treasures" class="ledger-col-treasures">${itemsCount}${itemsSummary ? `<div class="ledger-treasures-detail">${itemsSummary}</div>` : ""}</td>
       <td data-label="Total" class="ledger-col-total">${formatPrice(order.amountTotal, order.currency)}</td>
       <td data-label="Status" class="ledger-col-status">${statusCell}</td>
       <td data-label="Actions" class="ledger-col-actions">
