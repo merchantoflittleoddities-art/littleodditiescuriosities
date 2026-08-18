@@ -2090,13 +2090,18 @@ async function initiateStripeCheckout(cart, products) {
     return;
   }
 
+  // Read the merchant note (optional free text). The server clamps and stores
+  // it as Stripe session metadata; it never affects pricing, quantity, or size.
+  const orderNote = (document.querySelector("#order-notes")?.value || "").trim().slice(0, 500);
+
   try {
     const response = await fetch("/api/create-checkout-session", {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         lineItems,
-        shippingMethod: totals.shippingOption.id
+        shippingMethod: totals.shippingOption.id,
+        orderNote: orderNote || undefined
       })
     });
 

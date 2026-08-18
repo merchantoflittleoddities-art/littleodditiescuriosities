@@ -278,6 +278,13 @@ function buildOrderCard(order) {
        </div>`
     : "";
 
+  const noteRow = order.customerNote
+    ? `<div class="order-detail-row">
+         <span class="detail-label">Note</span>
+         <span class="order-note">${escapeHtml(order.customerNote)}</span>
+       </div>`
+    : "";
+
   const advanceBtn = nextLabel
     ? `<button class="btn-status"
                data-action="advance"
@@ -315,6 +322,7 @@ function buildOrderCard(order) {
         </div>
         ${addressRow}
         ${shippingRow}
+        ${noteRow}
         <div class="order-detail-row">
           <span class="detail-label">Treasures</span>
           <div class="order-items">${itemsHtml}</div>
