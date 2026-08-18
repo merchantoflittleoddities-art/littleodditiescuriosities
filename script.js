@@ -2075,9 +2075,11 @@ async function initiateStripeCheckout(cart, products) {
     .map((entry) => {
       const product = products.find((p) => p.id === entry.id);
       if (!product) return null;
+      const size = normalizeCartSize(entry.size);
       return {
         productId: product.id,
-        quantity:  entry.quantity
+        quantity:  entry.quantity,
+        size:      size || undefined
       };
     })
     .filter(Boolean);
