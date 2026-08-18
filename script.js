@@ -192,7 +192,20 @@ function clearCart() {
   renderCartCount();
 }
 
-function addToCart(id, quantity = 1) {
+function normalizeCartSize(size) {
+  return (typeof size === "string" && size.trim()) ? size.trim() : "";
+}
+
+function cartItemMatches(entry, id, size) {
+  return !!entry && entry.id === id && normalizeCartSize(entry.size) === normalizeCartSize(size);
+}
+
+function sizeSlug(size) {
+  const slug = normalizeCartSize(size).toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  return slug || "nosize";
+}
+
+function addToCart(id, quantity = 1, size) {
   const availabilityState = getProductAvailabilityState(id);
   if (availabilityState !== "available") {
     const blockedMessage = availabilityState === "unverified"
@@ -203,24 +216,27 @@ function addToCart(id, quantity = 1) {
   }
 
   const cart = getCart();
-  const item = cart.find((entry) => entry.id === id);
+  const item = cart.find((entry) => cartItemMatches(entry, id, size));
   if (item) {
     item.quantity += quantity;
   } else {
-    cart.push({ id, quantity });
+    const next = { id, quantity };
+    const normSize = normalizeCartSize(size);
+    if (normSize) next.size = normSize;
+    cart.push(next);
   }
   saveCart(cart);
   showToast("Added treasure to your Curiosity Cabinet.");
 }
 
-function removeFromCart(id) {
-  saveCart(getCart().filter((entry) => entry.id !== id));
+function removeFromCart(id, size) {
+  saveCart(getCart().filter((entry) => !cartItemMatches(entry, id, size)));
   renderCabinet();
 }
 
-function setCartQuantity(id, quantity) {
+function setCartQuantity(id, quantity, size) {
   const cart = getCart();
-  const item = cart.find((entry) => entry.id === id);
+  const item = cart.find((entry) => cartItemMatches(entry, id, size));
   if (!item) return;
   item.quantity = Math.max(1, Number(quantity) || 1);
   saveCart(cart);
@@ -910,20 +926,26 @@ function renderProductsGrid(products, selector) {
  */
 function buildCartRow(entry, product) {
   const itemPrice = getProductPrice(product);
+  const entrySize = normalizeCartSize(entry.size);
+  const sizeLine = entrySize ? `<p class="muted">Size: ${escapeHtml(entrySize)}</p>` : "";
+  const rowSlug = sizeSlug(entrySize);
+  const rowId = `${product.id}-${rowSlug}`;
+  const sizeAttr = escapeHtml(entrySize);
   return `
     <div class="cart-row">
       <div>
         <h3>${product.name}</h3>
         <p>${product.collection}</p>
+        ${sizeLine}
         <p class="muted">${product.description || "Bracelet details will be added soon."}</p>
       </div>
       <div class="cart-quantity">
-        <label for="qty-${product.id}">Qty</label>
-        <input id="qty-${product.id}" type="number" min="1" value="${entry.quantity}" data-quantity="${product.id}">
+        <label for="qty-${rowId}">Qty</label>
+        <input id="qty-${rowId}" type="number" min="1" value="${entry.quantity}" data-quantity="${product.id}" data-size="${sizeAttr}">
       </div>
       <div class="cart-price">${formatPrice(itemPrice * entry.quantity)}</div>
       <div>
-        <button class="button button-secondary" type="button" data-remove="${product.id}">Remove</button>
+        <button class="button button-secondary" type="button" data-remove="${product.id}" data-size="${sizeAttr}">Remove</button>
       </div>
     </div>
   `;
@@ -932,10 +954,10 @@ function buildCartRow(entry, product) {
 /** Wires quantity-change and remove-item listeners on cart rows inside a container */
 function attachCartRowHandlers(container) {
   container.querySelectorAll("[data-quantity]").forEach((input) => {
-    input.addEventListener("change", () => setCartQuantity(input.dataset.quantity, input.value));
+    input.addEventListener("change", () => setCartQuantity(input.dataset.quantity, input.value, input.dataset.size));
   });
   container.querySelectorAll("[data-remove]").forEach((button) => {
-    button.addEventListener("click", () => removeFromCart(button.dataset.remove));
+    button.addEventListener("click", () => removeFromCart(button.dataset.remove, button.dataset.size));
   });
 }
 
@@ -1850,7 +1872,13 @@ function renderProductPage(products) {
 
   if (available) {
     const addButton = document.querySelector("#add-to-cabinet");
-    if (addButton) addButton.addEventListener("click", () => addToCart(product.id));
+    if (addButton) {
+      addButton.addEventListener("click", () => {
+        const sizeSelect = document.querySelector("#bracelet-size");
+        const selectedSize = sizeSelect ? sizeSelect.value : "";
+        addToCart(product.id, 1, selectedSize);
+      });
+    }
   }
 
   attachSatchelHandlers(detailArea);
