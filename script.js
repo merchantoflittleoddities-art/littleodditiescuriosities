@@ -1818,12 +1818,20 @@ function renderProductPage(products) {
     "Wicked Branches"
   ];
 
+  const sizeEmojis = {
+    "Miniature Sprout": "🌱",
+    "Vines": "🌿",
+    "Mushrooms": "🍄",
+    "Forest Floor": "🍂",
+    "Wicked Branches": "🌲"
+  };
+
   const sizeSelector = `
     <div class="size-selector">
       <label for="bracelet-size">Bracelet Size</label>
       <select id="bracelet-size" name="bracelet-size">
         <option value="" disabled selected>Please choose a size</option>
-        ${sizeNames.map((s) => `<option value="${s}">${s}</option>`).join("")}
+        ${sizeNames.map((s) => `<option value="${s}">${sizeEmojis[s]} ${s}</option>`).join("")}
       </select>
       <p class="size-selector-hint muted">Don't know which size is for you? Wander over to the <a href="sizing.html">Merchant's Size Guide</a>.</p>
     </div>
