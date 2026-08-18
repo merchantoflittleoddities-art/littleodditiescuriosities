@@ -1825,7 +1825,7 @@ function renderProductPage(products) {
         <option value="" disabled selected>Please choose a size</option>
         ${sizeNames.map((s) => `<option value="${s}">${s}</option>`).join("")}
       </select>
-      <p class="size-selector-hint muted">A sizing guide is coming soon.</p>
+      <p class="size-selector-hint muted">Don't know which size is for you? Wander over to the <a href="sizing.html">Merchant's Size Guide</a>.</p>
     </div>
   `;
 
