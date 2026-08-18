@@ -130,6 +130,7 @@ const ORDER_STATUS_COPY = {
 const FREE_SHIPPING_THRESHOLD_PENCE = 3000;
 const MAX_QUANTITY_PER_ITEM = 99;
 const MAX_TOTAL_QUANTITY = 99;
+const VALID_SIZES = ["Miniature Sprout", "Vines", "Mushrooms", "Forest Floor", "Wicked Branches"];
 const SHIPPING_OPTIONS = {
   "royal-courier": {
     id: "royal-courier",
@@ -254,7 +255,7 @@ function getProductPrice(product, tierById, tierByName) {
 
 function normalizeRequestedItems(lineItems) {
   const requestedItems = [];
-  const quantitiesByProductId = new Map();
+  const quantitiesByKey = new Map();
   let totalQuantity = 0;
 
   for (const item of lineItems) {
@@ -282,17 +283,25 @@ function normalizeRequestedItems(lineItems) {
       return { error: `The cart cannot contain more than ${MAX_TOTAL_QUANTITY} items in total.` };
     }
 
-    const nextQuantity = (quantitiesByProductId.get(productId) || 0) + quantity;
-    if (nextQuantity > MAX_QUANTITY_PER_ITEM) {
+    // Size is optional order data only — it never changes price or quantity.
+    // Missing/empty size is treated as "no size" so legacy single-line items
+    // still merge by product only; distinct sizes stay on distinct line items.
+    const size = typeof item.size === "string" && item.size.trim() ? item.size.trim() : undefined;
+    if (size !== undefined && !VALID_SIZES.includes(size)) {
+      return { error: `Invalid size '${size}' for product '${productId}'.` };
+    }
+    const key = productId + "\u0000" + (size || "");
+    const existing = quantitiesByKey.get(key) || { productId, size, quantity: 0 };
+    existing.quantity += quantity;
+    if (existing.quantity > MAX_QUANTITY_PER_ITEM) {
       return { error: `Quantity for a single item cannot exceed ${MAX_QUANTITY_PER_ITEM}.` };
     }
-
-    quantitiesByProductId.set(productId, nextQuantity);
+    quantitiesByKey.set(key, existing);
   }
 
-  quantitiesByProductId.forEach((quantity, productId) => {
-    requestedItems.push({ productId, quantity });
-  });
+  for (const entry of quantitiesByKey.values()) {
+    requestedItems.push({ productId: entry.productId, size: entry.size, quantity: entry.quantity });
+  }
 
   return { items: requestedItems };
 }
@@ -1375,6 +1384,7 @@ async function handleCreateCheckoutSession(req, res) {
 
     resolvedItems.push({
       productId: item.productId,
+      size: item.size,
       name: typeof product.name === "string" && product.name.trim() ? product.name.trim() : item.productId,
       quantity: item.quantity,
       unitAmountPence,
@@ -1437,7 +1447,7 @@ async function handleCreateCheckoutSession(req, res) {
           price_data: {
             currency: "gbp",
             product_data: {
-              name: item.name
+              name: item.size ? `${item.name} (Size: ${item.size})` : item.name
             },
             unit_amount: item.unitAmountPence
           },
