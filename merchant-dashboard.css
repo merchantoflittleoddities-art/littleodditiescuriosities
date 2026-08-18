@@ -707,6 +707,14 @@ body {
   white-space: nowrap;
 }
 
+.ledger-treasures-detail {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 0.25rem;
+  white-space: normal;
+  line-height: 1.3;
+}
+
 .ledger-col-total {
   font-weight: bold;
   color: var(--gold);
