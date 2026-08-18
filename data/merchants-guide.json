@@ -24,7 +24,7 @@
     {
       "id": "bracelet-size",
       "question": "What size are the bracelets?",
-      "answer": "The Merchant is currently preparing a sizing guide to help every traveller find the perfect fit. Please check back soon.",
+      "answer": "Don't know which size is for you? Wander over to the <a href=\"sizing.html\">Merchant's Size Guide</a>.",
       "displayOrder": 4
     },
     {
