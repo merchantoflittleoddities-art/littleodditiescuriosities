@@ -1345,8 +1345,9 @@ async function handleCreateCheckoutSession(req, res) {
 
   let lineItems;
   let shippingMethod;
+  let orderNote;
   try {
-    ({ lineItems, shippingMethod } = JSON.parse(await readRequestBody(req)));
+    ({ lineItems, shippingMethod, orderNote } = JSON.parse(await readRequestBody(req)));
   } catch {
     sendJson(res, 400, { error: "Invalid request body." });
     return;
@@ -1356,6 +1357,11 @@ async function handleCreateCheckoutSession(req, res) {
     sendJson(res, 400, { error: "Cart is empty." });
     return;
   }
+
+  // Order notes are optional free text only. Trim and clamp to Stripe's
+  // 500-character metadata value limit. This never affects pricing, quantity,
+  // stock, or size handling (Task 3).
+  orderNote = (typeof orderNote === "string" ? orderNote.trim() : "").slice(0, 500);
 
   const normalized = normalizeRequestedItems(lineItems);
   if (normalized.error) {
@@ -1475,7 +1481,8 @@ async function handleCreateCheckoutSession(req, res) {
         shippingLabel: shippingOption.name,
         shippingAmount: (shippingCostPence / 100).toFixed(2),
         subtotal: subtotal.toFixed(2),
-        total: (finalTotalPence / 100).toFixed(2)
+        total: (finalTotalPence / 100).toFixed(2),
+        customerNote: orderNote
       }
     });
 
@@ -1565,6 +1572,7 @@ async function handleGetOrders(req, res) {
           paymentIntentId: s.payment_intent || null,
           customerName: s.customer_details?.name || "Unknown Traveller",
           customerEmail: s.customer_details?.email || "Unknown",
+          customerNote: s.metadata?.customerNote || null,
           shippingAddress,
           shippingMethod: s.metadata?.shippingLabel || null,
           shippingAmount: parseFloat(s.metadata?.shippingAmount || "0"),
