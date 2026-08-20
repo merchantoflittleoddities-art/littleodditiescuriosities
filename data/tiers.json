@@ -104,7 +104,10 @@
         "1 jump ring",
         "1 charm"
       ],
-      "exampleBracelets": [],
+      "exampleBracelets": [
+        "Lost in Moonlight",
+        "Unsung Melody"
+      ],
       "packaging": "Standard Handmade Packaging",
       "displayOrder": 2.5
     }
