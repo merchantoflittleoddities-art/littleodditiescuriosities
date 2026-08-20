@@ -94,6 +94,19 @@
       ],
       "packaging": "Premium Packaging with Extra Goodies",
       "displayOrder": 6
+    },
+    {
+      "id": "oddly-adorned",
+      "name": "Oddly Adorned",
+      "price": 3.50,
+      "includes": [
+        "Cord",
+        "1 jump ring",
+        "1 charm"
+      ],
+      "exampleBracelets": [],
+      "packaging": "Standard Handmade Packaging",
+      "displayOrder": 2.5
     }
   ]
 }

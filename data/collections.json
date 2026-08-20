@@ -40,6 +40,15 @@
       "displayOrder": 4,
       "shortDescription": "Relics waiting to be rediscovered...",
       "fullDescription": "Hidden beneath dust and time lie stories waiting to be uncovered. Forgotten Treasures is a growing collection of mysterious relics, ancient secrets and curious discoveries that continue to expand as new treasures are found."
+    },
+    {
+      "id": "oddly-adorned",
+      "name": "Oddly Adorned",
+      "icon": "🪢",
+      "colourTheme": "#B8860B",
+      "displayOrder": 5,
+      "shortDescription": "Charm + cord bracelets kissed with a single perfect charm.",
+      "fullDescription": "Delicate cord bracelets finished with a single jump ring and one carefully chosen charm — tiny adornments for small, everyday spells."
     }
   ]
 }
