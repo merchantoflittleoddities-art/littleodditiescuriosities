@@ -206,6 +206,42 @@
       "packaging": "Standard Handmade Packaging",
       "images": [],
       "available": true
+    },
+    {
+      "id": "lost-in-moonlight",
+      "name": "Lost in Moonlight",
+      "collection": "Oddly Adorned",
+      "tier": "Oddly Adorned",
+      "price": 3.5,
+      "description": "Royal blue Korean waxed polyester cord carrying a silver moon charm, finished with a single jump ring and an adjustable sliding knot. Originally made using 32 cm of cord.",
+      "lore": "Something about a moon that became lost after wandering too far from the night sky — eventually finding its way onto a little thread of blue and refusing to leave.",
+      "materials": [
+        "Royal blue Korean waxed polyester cord",
+        "Silver moon charm",
+        "1 jump ring",
+        "Adjustable sliding knot"
+      ],
+      "packaging": "Standard Handmade Packaging",
+      "images": [],
+      "available": true
+    },
+    {
+      "id": "unsung-melody",
+      "name": "Unsung Melody",
+      "collection": "Oddly Adorned",
+      "tier": "Oddly Adorned",
+      "price": 3.5,
+      "description": "White Korean waxed polyester cord carrying a vinyl-record charm with a flower growing from it, finished with a single jump ring and an adjustable sliding knot. Originally made using 32 cm of cord.",
+      "lore": "There was once a song that nobody remembered. Its record was left behind, its melody slowly fading into silence. Then, somewhere between the grooves, a little flower appeared. Perhaps the song wasn't finished after all.",
+      "materials": [
+        "White Korean waxed polyester cord",
+        "Vinyl record + flower charm",
+        "1 jump ring",
+        "Adjustable sliding knot"
+      ],
+      "packaging": "Standard Handmade Packaging",
+      "images": [],
+      "available": true
     }
   ]
 }
