@@ -161,6 +161,7 @@ function getTierIcon(name) {
     case "Forgotten Treasures": return "🗝️";
     case "Hidden Artifacts":    return "🌲";
     case "Ancient Artifacts":   return "👑";
+    case "Oddly Adorned":       return "🪢";
     default:                    return "✦";
   }
 }
