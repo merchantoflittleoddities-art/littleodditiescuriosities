@@ -766,6 +766,7 @@ function loadProductGallery(product) {
   const imageFiles = Array.isArray(product.images) && product.images.length
     ? product.images : [];
   const folder      = `${IMAGE_ROOT}/${product.id}`;
+  const safeName    = escapeHtml(product.name);
   const placeholder = `<div class="image-placeholder">A photograph of this treasure will appear soon.</div>`;
 
   gallery.innerHTML = placeholder;
@@ -773,11 +774,133 @@ function loadProductGallery(product) {
 
   const loaded = [];
   let processed = 0;
+  let current = 0;
+  let mainImg = null;
+  let backdropImg = null;
+  let counter = null;
+
+  function setCurrent(index) {
+    if (!loaded.length) return;
+    current = (index + loaded.length) % loaded.length;
+    updateMain();
+    syncLightbox();
+  }
+
+  function updateMain() {
+    if (!mainImg) return;
+    mainImg.src = loaded[current];
+    mainImg.alt = `${safeName} — photo ${current + 1} of ${loaded.length}`;
+    gallery.querySelectorAll(".gallery-thumb").forEach((thumb, i) => {
+      thumb.classList.toggle("is-active", i === current);
+      thumb.setAttribute("aria-selected", String(i === current));
+    });
+  }
+
+  function syncLightbox() {
+    if (!backdropImg) return;
+    backdropImg.src     = loaded[current];
+    backdropImg.alt     = `${safeName} — photo ${current + 1} of ${loaded.length}`;
+    counter.textContent = `${current + 1} / ${loaded.length}`;
+  }
+
 
   function finishGallery() {
-    gallery.innerHTML = loaded.length
-      ? loaded.map((src) => `<div class="gallery-item"><img src="${src}" alt="${product.name}"></div>`).join("")
-      : placeholder;
+    if (!loaded.length) {
+      gallery.innerHTML = placeholder;
+      return;
+    }
+
+    mainImg = null;
+    backdropImg = null;
+    counter = null;
+
+    const multi = loaded.length > 1;
+    const mainHtml = `
+      <div class="gallery-main${multi ? " gallery-main--clickable" : ""}"
+           ${multi ? 'role="button" tabindex="0" aria-label="View larger image"' : ""}>
+        <img src="${loaded[current]}" alt="${safeName} — photo 1 of ${loaded.length}">
+      </div>
+    `;
+    const thumbsHtml = !multi ? "" : `
+      <div class="gallery-thumbs" aria-label="Product photos">
+        ${loaded.map((src, i) => `
+          <button type="button" class="gallery-thumb${i === current ? " is-active" : ""}"
+                  data-index="${i}" aria-selected="${i === current}"
+                  aria-label="Photo ${i + 1} of ${loaded.length}">
+            <img src="${src}" alt="">
+          </button>`).join("")}
+      </div>
+    `;
+
+    gallery.innerHTML = `${mainHtml}${thumbsHtml}`;
+    mainImg = gallery.querySelector(".gallery-main img");
+
+    /* single valid image: plain image only, no controls or lightbox */
+    const mainWrap = gallery.querySelector(".gallery-main");
+    if (!multi) return;
+
+    /* ---- Lightbox ---- */
+    let overlay = null;
+
+    function closeLightbox() {
+      if (!overlay) return;
+      document.removeEventListener("keydown", docKeydown);
+      overlay.remove();
+      overlay = null;
+      backdropImg = null;
+      counter = null;
+    }
+
+    function docKeydown(e) {
+      if (e.key === "Escape")          { e.preventDefault(); closeLightbox(); }
+      else if (e.key === "ArrowLeft")  setCurrent(current - 1);
+      else if (e.key === "ArrowRight") setCurrent(current + 1);
+    }
+
+    function openLightbox() {
+      closeLightbox();
+      overlay = document.createElement("div");
+      overlay.className = "gallery-lightbox";
+      overlay.innerHTML = `
+        <button type="button" class="gallery-lightbox-close" aria-label="Close image viewer">✕</button>
+        <button type="button" class="gallery-lightbox-arrow gallery-lightbox-prev" aria-label="Previous photo">‹</button>
+        <figure>
+          <img src="${loaded[current]}" alt="${safeName} — photo ${current + 1} of ${loaded.length}">
+          <figcaption class="gallery-lightbox-counter"></figcaption>
+        </figure>
+        <button type="button" class="gallery-lightbox-arrow gallery-lightbox-next" aria-label="Next photo">›</button>
+      `;
+      document.body.appendChild(overlay);
+      backdropImg   = overlay.querySelector("img");
+      counter       = overlay.querySelector(".gallery-lightbox-counter");
+
+      overlay.querySelector(".gallery-lightbox-close").addEventListener("click", closeLightbox);
+      overlay.querySelector(".gallery-lightbox-prev").addEventListener("click", () => setCurrent(current - 1));
+      overlay.querySelector(".gallery-lightbox-next").addEventListener("click", () => setCurrent(current + 1));
+      overlay.addEventListener("click", (e) => { if (e.target === overlay) closeLightbox(); });
+      document.addEventListener("keydown", docKeydown);
+
+      /* basic touch swipe */
+      let touchStartX = null;
+      overlay.addEventListener("touchstart", (e) => {
+        touchStartX = e.changedTouches[0].clientX;
+      }, { passive: true });
+      overlay.addEventListener("touchend", (e) => {
+        if (touchStartX === null) return;
+        const dx = e.changedTouches[0].clientX - touchStartX;
+        if (Math.abs(dx) > 40) setCurrent(dx < 0 ? current + 1 : current - 1);
+        touchStartX = null;
+      }, { passive: true });
+    }
+
+    mainWrap.addEventListener("click", openLightbox);
+    mainWrap.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openLightbox(); }
+    });
+
+    gallery.querySelectorAll(".gallery-thumb").forEach((thumb) => {
+      thumb.addEventListener("click", () => setCurrent(Number(thumb.dataset.index)));
+    });
   }
 
   imageFiles.forEach((file) => {
