@@ -1,6 +1,47 @@
 {
   "products": [
     {
+      "id": "moonlight-magic",
+      "name": "Moonlight Magic",
+      "collection": "Forgotten Treasures",
+      "tier": "Forgotten Treasures",
+      "price": 5.5,
+      "description": "A bracelet woven beneath imaginary moonlit skies, where dark crackled stones meet purple sparks of quiet magic.",
+      "lore": "Moonlight Magic was made for the moments when the world feels a little quieter and the night seems to hold its breath. Black crackle beads echo the shadows beneath the moon, while purple beads catch the feeling of distant starlight. Finished with a silver moon charm, this treasure carries a little piece of nighttime wonder wherever it travels.",
+      "materials": [
+        "Green nylon cord",
+        "Black crackle beads",
+        "Purple baking paint beads",
+        "Spacer beads",
+        "Silver moon charm",
+        "Sliding knot - size may vary",
+        "Finished length: 28 cm (may vary with sliding knot)"
+      ],
+      "packaging": "Standard Handmade Packaging",
+      "images": [],
+      "available": true
+    },
+    {
+      "id": "wish-upon-a-star",
+      "name": "Wish Upon a Star",
+      "collection": "Little Miracles",
+      "tier": "Little Relics",
+      "price": 4.5,
+      "description": "A bright little treasure made for hopeful wishes, with vivid colour and a star to carry them toward the sky.",
+      "lore": "Wish Upon a Star was made for those who still believe that a small wish can become something wonderful. Its hot pink cord brings a flash of playful colour, while the green crackle beads carry a little woodland-like magic. Finished with a star charm, it is a tiny reminder to keep wishing, even when the night feels long.",
+      "materials": [
+        "Hot pink nylon cord",
+        "Green crackle beads",
+        "Spacer beads",
+        "Star charm",
+        "Sliding knot - size may vary",
+        "Finished length: 34 cm (may vary with sliding knot)"
+      ],
+      "packaging": "Standard Handmade Packaging",
+      "images": [],
+      "available": true
+    },
+    {
       "id": "ghostly-valentine",
       "name": "Ghostly Valentine",
       "collection": "Haunted Love",
