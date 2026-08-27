@@ -59,7 +59,11 @@
         "Spacer beads"
       ],
       "packaging": "Standard Handmade Packaging",
-      "images": [],
+      "images": [
+        "1.jpg",
+        "2.jpg",
+        "3.jpg"
+      ],
       "available": true
     },
     {
@@ -247,6 +251,29 @@
       ],
       "packaging": "Standard Handmade Packaging",
       "images": [],
+      "available": true
+    },
+    {
+      "id": "mushroom-meadow",
+      "name": "Mushroom Meadow",
+      "collection": "Enchanted Forest",
+      "tier": "Little Relics",
+      "price": 4.5,
+      "description": "A little piece of enchanted forest floor, inspired by mossy clearings and the small wonders hiding beneath the ferns.",
+      "lore": "They say that if you wander far enough off the woodland path, past the brambles and beneath the old trees, you may stumble upon a clearing where mushrooms gather like tiny red-capped villagers. Nobody tends this meadow. Nobody planted it. It simply appears each autumn, quietly beautiful, as if the forest itself decided to keep one small secret just for those who pause and look closely. Mushroom Meadow carries that feeling — the moment of stopping mid-step because something unexpected caught your eye among the leaves.",
+      "materials": [
+        "Firebrick crackle beads",
+        "One mushroom charm",
+        "White nylon cord",
+        "Sliding knot closure",
+        "Finished length: 33 cm"
+      ],
+      "packaging": "Standard Handmade Packaging",
+      "images": [
+        "1.jpg",
+        "2.jpg",
+        "3.jpg"
+      ],
       "available": true
     }
   ]
