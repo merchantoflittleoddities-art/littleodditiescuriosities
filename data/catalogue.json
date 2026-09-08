@@ -1,6 +1,48 @@
 {
   "products": [
     {
+      "id": "lunars-lullaby",
+      "name": "Lunar's Lullaby",
+      "collection": "Forgotten Treasures",
+      "tier": "Hidden Artifacts",
+      "price": 6.5,
+      "description": "A soft nighttime treasure strung on black cord, where blue and white beads hum a quiet lullaby beneath a pink star and flower.",
+      "lore": "Lunar's Lullaby was made for the hour when the lamps go out and the world settles into hush. The blue beads carry the colour of late evening, the solid white beads hold a little of the moon's own light, and the pink star and flower charms drift among them like small dreams refusing to fade. It is a gentle companion for restless nights — a quiet song, tied in cord, for anyone who needs help drifting off.",
+      "materials": [
+        "Black nylon cord",
+        "Blue beads",
+        "Solid white beads",
+        "Pink star and flower vinyl charms",
+        "Spacer beads",
+        "Sliding knot - size may vary",
+        "Finished length: 28 cm (may vary with sliding knot)"
+      ],
+      "packaging": "Special Packaging",
+      "images": [],
+      "available": true
+    },
+    {
+      "id": "celestial-flight",
+      "name": "Celestial Flight",
+      "collection": "Little Miracles",
+      "tier": "Hidden Artifacts",
+      "price": 6.5,
+      "description": "A lilac-threaded bracelet for wings and wonders, with black and purple beads beneath a butterfly, a star and a moon.",
+      "lore": "Celestial Flight was made for the moment a butterfly first opens its wings — that small, trembling courage before takeoff. Lilac cord carries the colour of twilight, while black and purple beads gather the depth of the evening sky. A butterfly, a star and a moon travel together along the strand, as if the little flyer chose the night for its very first journey. A treasure for anyone learning that new beginnings can take flight even after dark.",
+      "materials": [
+        "Lilac nylon cord",
+        "Black beads",
+        "Purple beads",
+        "Butterfly, star and moon charms",
+        "Spacer beads",
+        "Sliding knot - size may vary",
+        "Finished length: 32 cm (may vary with sliding knot)"
+      ],
+      "packaging": "Special Packaging",
+      "images": [],
+      "available": true
+    },
+    {
       "id": "moonlight-magic",
       "name": "Moonlight Magic",
       "collection": "Forgotten Treasures",
@@ -54,13 +96,19 @@
         "Acrylic beads",
         "Ghost charm",
         "Spacer beads",
-        "Sliding knot - size may vary"
+        "Knotted tails",
+        "Sliding knot - size may vary",
+        "Finished length: 26 cm (may vary with sliding knot)",
+        "Finished length: 28 cm (may vary with sliding knot)"
       ],
       "packaging": "Standard Handmade Packaging",
       "images": [
         "1.jpg",
         "2.jpg",
-        "3.jpg"
+        "3.jpg",
+        "4.jpg",
+        "5.jpg",
+        "6.jpg"
       ],
       "available": true
     },
@@ -317,7 +365,8 @@
         "One mushroom charm",
         "White nylon cord",
         "Sliding knot - size may vary",
-        "Finished length: 33 cm"
+        "Finished length: 33 cm",
+        "Finished length: 28 cm (may vary with sliding knot)"
       ],
       "packaging": "Standard Handmade Packaging",
       "images": [
