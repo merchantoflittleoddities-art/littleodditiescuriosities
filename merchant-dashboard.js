@@ -252,6 +252,13 @@ function formatDateShort(timestamp) {
    Module: Rendering
    ============================================================ */
 
+/** Primary human-facing reference: the LO-### order number when the
+    order has one; historical Stripe-only orders fall back to the old
+    short reference. */
+function orderDisplayRef(order) {
+  return order.orderNumber || `#${order.shortId}`;
+}
+
 /** Build the HTML string for a single order card */
 function buildOrderCard(order) {
   const status     = getFulfilmentStatus(order.id);
@@ -302,7 +309,7 @@ function buildOrderCard(order) {
       <div class="order-card-header">
         <div class="order-card-title">
           <span class="order-status-dot" style="background:${config.color}"></span>
-          <span class="order-badge">#${order.shortId}</span>
+          <span class="order-badge">${escapeHtml(orderDisplayRef(order))}</span>
           ${newBadge}
           <span class="order-date">${formatDateShort(order.created)}</span>
         </div>
@@ -329,7 +336,7 @@ function buildOrderCard(order) {
         </div>
         <div class="order-detail-row">
           <span class="detail-label">Payment</span>
-          <span class="order-total">${formatPrice(order.amountTotal, order.currency)}</span>
+          <span class="order-total">${formatPrice(order.amountTotal, order.currency)}${order.paymentMethod && order.paymentMethod !== "card" ? ` · ${escapeHtml(order.paymentMethod.charAt(0).toUpperCase() + order.paymentMethod.slice(1))}` : ""}</span>
         </div>
         <div class="order-detail-row order-id-row">
           <span class="detail-label">Ref</span>
@@ -389,7 +396,7 @@ function buildLedgerRow(order) {
 
   return `
     <tr data-order-id="${order.id}">
-      <td data-label="Order"><span class="order-badge">#${order.shortId}</span></td>
+      <td data-label="Order"><span class="order-badge">${escapeHtml(orderDisplayRef(order))}</span></td>
       <td data-label="Date">${formatDateShort(order.created)}</td>
       <td data-label="Customer">${escapeHtml(order.customerName)}</td>
       <td data-label="Treasures" class="ledger-col-treasures">${itemsCount}${itemsSummary ? `<div class="ledger-treasures-detail">${itemsSummary}</div>` : ""}</td>
@@ -486,6 +493,7 @@ function applyLedgerFilters() {
       || order.customerEmail.toLowerCase().includes(query)
       || order.id.toLowerCase().includes(query)
       || order.shortId.toLowerCase().includes(query)
+      || (order.orderNumber && order.orderNumber.toLowerCase().includes(query))
       || (order.paymentIntentId && order.paymentIntentId.toLowerCase().includes(query));
 
     const matchesStatus = !status || getFulfilmentStatus(order.id) === status;
@@ -673,6 +681,7 @@ function filterOrders(orders, query, statusFilter) {
       || order.customerEmail.toLowerCase().includes(q)
       || order.id.toLowerCase().includes(q)
       || order.shortId.toLowerCase().includes(q)
+      || (order.orderNumber && order.orderNumber.toLowerCase().includes(q))
       || (order.paymentIntentId && order.paymentIntentId.toLowerCase().includes(q));
 
     const matchesStatus = !statusFilter || getFulfilmentStatus(order.id) === statusFilter;
@@ -687,7 +696,7 @@ function filterOrders(orders, query, statusFilter) {
 
 function exportCSV(orders) {
   const headers = [
-    "Order Ref", "Date", "Traveller Name", "Email", "Shipping Address",
+    "Order Number", "Order Ref", "Source", "Date", "Traveller Name", "Email", "Shipping Address",
     "Shipping Method", "Shipping Amount (£)", "Treasures", "Total Paid (£)", "Currency", "Payment Status",
     "Fulfilment Status", "Stripe Session ID", "Payment Intent ID"
   ];
@@ -698,7 +707,9 @@ function exportCSV(orders) {
     const statusLabel  = STATUS_CONFIG[status]?.label || status;
 
     return [
+      order.orderNumber || "",
       order.shortId,
+      order.source || "online",
       formatDate(order.created),
       order.customerName,
       order.customerEmail,
@@ -726,6 +737,211 @@ function exportCSV(orders) {
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
+}
+
+/* ============================================================
+   Module: Manual (IRL) Order Creation
+   ============================================================ */
+
+const CREATE_ORDER_URL = "/api/create-order";
+
+/** One clientRequestId per form session: retried submissions of the
+    same order reuse it so the server can deduplicate (never allocating
+    a second LO-### or decrementing inventory twice). */
+let manualOrderClientRequestId = null;
+
+function manualOrderItemRowHtml() {
+  const options = allProducts
+    .map((p) => `<option value="${escapeHtml(p.id)}" data-price="${Number(p.price) || 0}">${escapeHtml(p.name)}${p.price ? ` — £${Number(p.price).toFixed(2)}` : ""}</option>`)
+    .join("");
+
+  return `
+    <div class="add-order-item-row" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:flex-end;margin-bottom:0.5rem;">
+      <div style="flex:2 1 220px;">
+        <select class="aoi-product">
+          <option value="">Custom / free-text item…</option>
+          ${options}
+        </select>
+      </div>
+      <div style="flex:1 1 90px;">
+        <input type="text" class="aoi-name" placeholder="Item name" maxlength="200" style="display:none;">
+      </div>
+      <div style="flex:0 1 70px;">
+        <input type="number" class="aoi-qty" min="1" max="99" step="1" value="1" aria-label="Quantity">
+      </div>
+      <div style="flex:0 1 100px;">
+        <input type="number" class="aoi-price" min="0" step="0.01" placeholder="£ each" aria-label="Unit price">
+      </div>
+      <button type="button" class="aoi-remove" title="Remove item" style="cursor:pointer;">&times;</button>
+    </div>`;
+}
+
+function addManualOrderItem() {
+  const container = document.getElementById("add-order-items");
+  if (!container) return;
+  container.insertAdjacentHTML("beforeend", manualOrderItemRowHtml());
+  const row = container.lastElementChild;
+  wireManualOrderItemRow(row);
+}
+
+function wireManualOrderItemRow(row) {
+  if (!row) return;
+  const productSelect = row.querySelector(".aoi-product");
+  const nameInput     = row.querySelector(".aoi-name");
+  const qtyInput      = row.querySelector(".aoi-qty");
+  const priceInput    = row.querySelector(".aoi-price");
+
+  productSelect?.addEventListener("change", () => {
+    const selected = productSelect.selectedOptions[0];
+    if (selected && selected.value) {
+      nameInput.style.display = "none";
+      nameInput.value = "";
+      if (priceInput) priceInput.value = Number(selected.dataset.price || 0).toFixed(2);
+    } else {
+      nameInput.style.display = "";
+    }
+    recalcManualOrderTotal();
+  });
+  nameInput?.addEventListener("input", recalcManualOrderTotal);
+  qtyInput?.addEventListener("input", recalcManualOrderTotal);
+  priceInput?.addEventListener("input", recalcManualOrderTotal);
+  row.querySelector(".aoi-remove")?.addEventListener("click", () => {
+    const container = document.getElementById("add-order-items");
+    if (container && container.children.length > 1) {
+      row.remove();
+    }
+    recalcManualOrderTotal();
+  });
+}
+
+/** Collect items; returns null + shows an error when invalid. */
+function collectManualOrderItems() {
+  const items = [];
+  let error = null;
+
+  document.querySelectorAll("#add-order-items .add-order-item-row").forEach((row) => {
+    const productSelect = row.querySelector(".aoi-product");
+    const nameInput     = row.querySelector(".aoi-name");
+    const qty           = Math.floor(Number(row.querySelector(".aoi-qty")?.value));
+    const price         = Number(row.querySelector(".aoi-price")?.value);
+
+    let name = null;
+    let productId = null;
+    if (productSelect?.value) {
+      const selected = productSelect.selectedOptions[0];
+      name = selected.textContent.split(" — £")[0].trim();
+      productId = productSelect.value;
+    } else if ((nameInput?.value || "").trim()) {
+      name = nameInput.value.trim();
+    }
+
+    if (!name) return; /* empty row — ignore */
+    if (!Number.isFinite(qty) || qty < 1) {
+      error = "Every treasure needs a quantity of at least 1.";
+      return;
+    }
+    if (!Number.isFinite(price) || price < 0) {
+      error = `A valid unit price is required for “${name}”.`;
+      return;
+    }
+    items.push({ name, quantity: qty, unitAmount: parseFloat(price.toFixed(2)), productId });
+  });
+
+  if (!error && !items.length) error = "Add at least one treasure to record an order.";
+  return { items, error };
+}
+
+function recalcManualOrderTotal() {
+  const { items, error } = collectManualOrderItems();
+  const totalEl = document.getElementById("add-order-total");
+  if (!totalEl) return;
+  if (error) { totalEl.textContent = "—"; return; }
+  const shipping = Math.max(0, Number(document.getElementById("add-order-shipping-amount")?.value) || 0);
+  const subtotal = items.reduce((sum, i) => sum + i.unitAmount * i.quantity, 0);
+  totalEl.textContent = `£${(subtotal + shipping).toFixed(2)}`;
+}
+
+function setAddOrderError(message) {
+  const el = document.getElementById("add-order-error");
+  if (!el) return;
+  el.textContent = message || "";
+  el.classList.toggle("hidden", !message);
+}
+
+function openAddOrderModal() {
+  const modal = document.getElementById("modal-add-order");
+  if (!modal) return;
+
+  const form = document.getElementById("add-order-form");
+  if (form) form.reset();
+  setAddOrderError("");
+
+  const container = document.getElementById("add-order-items");
+  if (container) {
+    container.innerHTML = "";
+    addManualOrderItem();
+  }
+
+  /* Keep the shipping default sensible: pickup ⇒ £0.00 */
+  const shippingAmount = document.getElementById("add-order-shipping-amount");
+  if (shippingAmount) shippingAmount.value = "0";
+
+  manualOrderClientRequestId = crypto.randomUUID();
+  modal.classList.remove("hidden");
+  recalcManualOrderTotal();
+}
+
+function closeAddOrderModal() {
+  document.getElementById("modal-add-order")?.classList.add("hidden");
+  manualOrderClientRequestId = null;
+}
+
+async function submitManualOrder() {
+  const token = getToken();
+  if (!token) { clearToken(); showLogin(); return; }
+
+  const { items, error } = collectManualOrderItems();
+  if (error) { setAddOrderError(error); return; }
+
+  const legacyRaw = document.getElementById("add-order-legacy-number")?.value || "";
+  const payload = {
+    clientRequestId: manualOrderClientRequestId,
+    items,
+    paymentMethod: document.getElementById("add-order-payment")?.value || "other",
+    shippingMethod: document.getElementById("add-order-shipping-method")?.value || "Other",
+    shippingAmount: Math.max(0, Number(document.getElementById("add-order-shipping-amount")?.value) || 0),
+    customerName: (document.getElementById("add-order-customer-name")?.value || "").trim() || undefined,
+    customerEmail: (document.getElementById("add-order-customer-email")?.value || "").trim() || undefined,
+    shippingAddress: (document.getElementById("add-order-shipping-address")?.value || "").trim() || undefined,
+    notes: (document.getElementById("add-order-notes")?.value || "").trim() || undefined,
+    ...(legacyRaw.trim() ? { legacyOrderNumber: Number(legacyRaw) } : {})
+  };
+
+  const submitBtn = document.getElementById("add-order-submit");
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = "Recording…"; }
+
+  try {
+    const response = await fetch(CREATE_ORDER_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (response.status === 401) { clearToken(); showLogin(); return; }
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "The order could not be recorded.");
+
+    closeAddOrderModal();
+    await loadAndRender();
+  } catch (submitError) {
+    setAddOrderError(submitError.message);
+  } finally {
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "✒️ Record Order"; }
+  }
 }
 
 /* ============================================================
@@ -2359,6 +2575,22 @@ function initDashboardUI() {
   /* CSV export */
   document.getElementById("export-csv")?.addEventListener("click", () => {
     exportCSV(allOrders);
+  });
+
+  /* Manual (IRL) order creation */
+  document.getElementById("add-order-form")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    submitManualOrder();
+  });
+  document.getElementById("add-order-button")?.addEventListener("click", openAddOrderModal);
+  document.getElementById("modal-add-order-close")?.addEventListener("click", closeAddOrderModal);
+  document.getElementById("add-order-cancel")?.addEventListener("click", closeAddOrderModal);
+  document.getElementById("add-order-item-add")?.addEventListener("click", addManualOrderItem);
+  document.getElementById("add-order-shipping-amount")?.addEventListener("input", recalcManualOrderTotal);
+  document.getElementById("add-order-submit")?.addEventListener("click", submitManualOrder);
+  const addOrderModal = document.getElementById("modal-add-order");
+  addOrderModal?.addEventListener("click", (event) => {
+    if (event.target === addOrderModal) closeAddOrderModal();
   });
 
   /* Logout */
