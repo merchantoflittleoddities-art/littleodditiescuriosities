@@ -868,9 +868,15 @@ function setAddOrderError(message) {
   el.classList.toggle("hidden", !message);
 }
 
-function openAddOrderModal() {
+async function openAddOrderModal() {
   const modal = document.getElementById("modal-add-order");
   if (!modal) return;
+
+  /* Ensure the catalogue is loaded before building item rows so the
+     Treasures dropdown lists real products (falls back to Custom-only). */
+  if (!allProducts.length) {
+    await fetchProductCatalogue().catch(() => {});
+  }
 
   const form = document.getElementById("add-order-form");
   if (form) form.reset();
