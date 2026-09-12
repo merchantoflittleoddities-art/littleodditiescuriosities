@@ -232,6 +232,9 @@
               <option value="custom">Custom range…</option>
             </select>
           </div>
+          <button id="add-order-button" class="btn-secondary" type="button">
+            ✒️ Add Order
+          </button>
           <button id="export-csv" class="btn-secondary" type="button">
             📥 Export Ledger
           </button>
@@ -616,6 +619,93 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="btn-secondary" id="modal-order-close-btn">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Add Manual (IRL) Order -->
+  <div id="modal-add-order" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="modal-add-order-title">
+    <div class="modal-card" style="max-width:720px;">
+      <div class="modal-header">
+        <h2 id="modal-add-order-title">✒️ Add Manual (IRL) Order</h2>
+        <button type="button" class="modal-close" id="modal-add-order-close" aria-label="Close order form">&times;</button>
+      </div>
+      <form id="add-order-form" class="modal-body">
+        <p class="panel-subtitle" style="margin:0 0 0.5rem;">
+          Record an in-person sale. The next Little Oddities order number (LO-###) is allocated automatically.
+          Nothing is charged — this is a ledger entry only.
+        </p>
+
+        <div class="form-group">
+          <label>Treasures *</label>
+          <div id="add-order-items">
+            <!-- Item rows are populated by merchant-dashboard.js -->
+          </div>
+          <button type="button" class="btn-secondary" id="add-order-item-add">+ Add another treasure</button>
+        </div>
+
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label for="add-order-customer-name">Traveller name</label>
+            <input type="text" id="add-order-customer-name" placeholder="Optional for IRL orders" autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label for="add-order-customer-email">Traveller email</label>
+            <input type="email" id="add-order-customer-email" placeholder="Optional — links the order to their account" autocomplete="off">
+          </div>
+        </div>
+
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label for="add-order-payment">Payment method *</label>
+            <select id="add-order-payment">
+              <option value="cash">💵 Cash</option>
+              <option value="card">💳 Card</option>
+              <option value="other">✦ Other</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="add-order-shipping-method">Journey / fulfilment *</label>
+            <select id="add-order-shipping-method">
+              <option value="Local pickup">🕯️ Local pickup</option>
+              <option value="Royal Courier">✉️ Royal Courier</option>
+              <option value="Royal Courier (Tracked)">📦 Royal Courier (Tracked)</option>
+              <option value="Other">✦ Other</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label for="add-order-shipping-amount">Shipping amount (£)</label>
+            <input type="number" id="add-order-shipping-amount" min="0" step="0.01" value="0">
+          </div>
+          <div class="form-group">
+            <label for="add-order-legacy-number">Order number (legacy import only)</label>
+            <input type="number" id="add-order-legacy-number" min="1" step="1" placeholder="Leave blank for LO-###">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="add-order-shipping-address">Shipping address</label>
+          <input type="text" id="add-order-shipping-address" placeholder="Only if this order is being posted" autocomplete="off">
+        </div>
+
+        <div class="form-group">
+          <label for="add-order-notes">Order notes</label>
+          <textarea id="add-order-notes" rows="3" maxlength="500" placeholder="Optional notes about this order"></textarea>
+        </div>
+
+        <div class="form-group">
+          <label>Total</label>
+          <strong id="add-order-total">£0.00</strong>
+        </div>
+
+        <p id="add-order-error" class="hidden" style="color:#c0392b;margin:0.25rem 0 0;"></p>
+      </form>
+      <div class="modal-footer">
+        <button type="button" class="btn-secondary" id="add-order-cancel">Cancel</button>
+        <button type="button" class="btn-secondary" id="add-order-submit">✒️ Record Order</button>
       </div>
     </div>
   </div>

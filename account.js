@@ -531,11 +531,15 @@ async function loadMessages() {
     container.innerHTML = messages.map((msg) => {
       const itemsSummary = msg.items.map((i) => `${escapeHtmlLocal(i.name)} ×${i.quantity}`).join(", ");
       const date = new Date(msg.created).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+      /* Primary reference is the Little Oddities order number (LO-###).
+         Historical orders created before local orders existed fall back
+         to the short Stripe reference; Stripe ids stay internal. */
+      const orderRef = msg.orderNumber || `#${msg.shortId}`;
 
       return `
         <article class="card message-card">
           <header class="message-card-header">
-            <span class="order-badge">#${msg.shortId}</span>
+            <span class="order-badge">${escapeHtmlLocal(orderRef)}</span>
             <span class="message-date">${date}</span>
           </header>
           <p class="message-items">${itemsSummary}</p>

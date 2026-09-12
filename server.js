@@ -94,6 +94,122 @@ function nextWebhookRetryDelay(attempt) {
   return exponential + jitter;
 }
 
+/* ============================================================
+   Unified Little Oddities order numbers (LO-###)
+   ============================================================ */
+
+// PostgreSQL sequence created by g7cloud_postgres_orders_migration.sql.
+// It is the single atomic allocator shared by online (Stripe webhook)
+// and manual (IRL) orders. Never allocate with MAX()+1 / COUNT()+1.
+const LO_ORDER_NUMBER_SEQUENCE = "lo_order_number_seq";
+
+// Sources of truth for order records.
+const ORDER_SOURCE_ONLINE = "online";
+const ORDER_SOURCE_IRL = "irl";
+
+// Manual (IRL) payment methods. IRL payments are never processed
+// through Stripe — they are recorded for the ledger only.
+const MANUAL_PAYMENT_METHODS = ["cash", "card", "other"];
+
+/** Format a raw numeric order number as the customer/merchant reference. */
+function formatOrderNumber(number) {
+  const n = Number(number);
+  if (!Number.isFinite(n) || n < 1) return null;
+  return `LO-${String(Math.floor(n)).padStart(3, "0")}`;
+}
+
+/** Map an orders table row to the order shape used by the dashboard/customer views. */
+function mapLocalOrderRow(row) {
+  const items = (row.items || []).map((item) => ({
+    name: item.name || "Treasure",
+    quantity: item.quantity || 1,
+    unitAmount: Number(item.unitAmount ?? item.unit_amount ?? 0),
+    totalAmount: Number(item.totalAmount ?? item.total_amount ?? 0)
+  }));
+
+  const subtotal = Number(row.subtotal ?? 0);
+  const shippingAmount = Number(row.shipping_amount ?? 0);
+
+  return {
+    id: row.id,
+    // Manual orders are keyed by their local order id everywhere
+    // (including order_status_records). Online orders keep their
+    // Stripe Checkout Session id as `id` below in the Stripe mapping.
+    localOrderNumber: Number(row.order_number),
+    orderNumber: formatOrderNumber(row.order_number),
+    source: row.source || ORDER_SOURCE_ONLINE,
+    checkoutSessionId: row.stripe_checkout_session_id || null,
+    paymentIntentId: row.stripe_payment_intent_id || null,
+    customerName: row.customer_name || "Unknown Traveller",
+    customerEmail: row.customer_email || "Unknown",
+    customerNote: row.notes || null,
+    shippingAddress: row.shipping_address || null,
+    shippingMethod: row.shipping_method || null,
+    shippingAmount,
+    items,
+    amountTotal: Number(row.total ?? (subtotal + shippingAmount)),
+    currency: (row.currency || "GBP").toUpperCase(),
+    paymentMethod: row.payment_method || null,
+    paymentStatus: row.payment_status || "paid",
+    created: Number(row.created_at)
+  };
+}
+
+/** Load every local order and map it to the shared order shape. */
+async function loadLocalOrders(client = pool) {
+  const result = await client.query(
+    `SELECT id, order_number, source, stripe_checkout_session_id,
+            stripe_payment_intent_id, client_request_id, customer_name,
+            customer_email, shipping_address, shipping_method,
+            shipping_amount, payment_method, payment_status, items,
+            subtotal, total, currency, notes, created_at, updated_at
+     FROM orders`
+  );
+  return result.rows.map(mapLocalOrderRow);
+}
+
+/**
+ * Insert the local order for a completed online checkout inside the
+ * caller's transaction. The order number is allocated atomically by
+ * the shared PostgreSQL sequence inline in the INSERT, and the unique
+ * constraint on stripe_checkout_session_id makes redelivered webhooks
+ * a no-op even if the event-id guard were bypassed.
+ */
+async function insertOnlineOrderInTx(client, orderData) {
+  const now = Date.now();
+  const result = await client.query(
+    `INSERT INTO orders (
+      order_number, source, stripe_checkout_session_id,
+      stripe_payment_intent_id, customer_name, customer_email,
+      shipping_address, shipping_method, shipping_amount,
+      payment_method, payment_status, items, subtotal, total,
+      currency, notes, created_at, updated_at
+    ) VALUES (
+      nextval('${LO_ORDER_NUMBER_SEQUENCE}'), 'online', $1, $2, $3, $4, $5, $6, $7,
+      'card', 'paid', $8::jsonb, $9, $10, $11, $12, $13, $13
+    )
+    ON CONFLICT (stripe_checkout_session_id) DO NOTHING
+    RETURNING order_number`,
+    [
+      orderData.checkoutSessionId,
+      orderData.paymentIntentId,
+      orderData.customerName,
+      orderData.customerEmail,
+      orderData.shippingAddress,
+      orderData.shippingMethod,
+      orderData.shippingAmount,
+      JSON.stringify(orderData.items),
+      orderData.subtotal,
+      orderData.total,
+      (orderData.currency || "GBP").toUpperCase(),
+      orderData.customerNote || null,
+      now
+    ]
+  );
+  return result.rows[0] || null;
+}
+
+
 async function readRequestBody(req) {
   let body = "";
   for await (const chunk of req) {
@@ -1222,6 +1338,250 @@ async function handleUpdateOrderStatus(req, res) {
   }
 }
 
+/* ============================================================
+   Manual (IRL) order creation — Merchant Dashboard
+   ============================================================ */
+
+async function handleCreateManualOrder(req, res) {
+  if (req.method !== "POST") {
+    sendPrivateApiJson(res, 405, { error: "Method not allowed." });
+    return;
+  }
+
+  const token = getDashboardBearerToken(req);
+  if (!verifyDashboardToken(token)) {
+    sendPrivateApiJson(res, 401, { error: "Unauthorised. Please log in again." });
+    return;
+  }
+
+  let body;
+  try {
+    body = JSON.parse(await readRequestBody(req) || "{}");
+  } catch {
+    sendPrivateApiJson(res, 400, { error: "Invalid JSON body." });
+    return;
+  }
+
+  const clientRequestId = typeof body.clientRequestId === "string" && body.clientRequestId.trim()
+    ? body.clientRequestId.trim().slice(0, 64)
+    : null;
+
+  const rawItems = Array.isArray(body.items) ? body.items : [];
+  const items = [];
+  for (const raw of rawItems) {
+    const name = String(raw?.name || "").trim();
+    const quantity = Math.floor(Number(raw?.quantity));
+    const unitAmount = Number(raw?.unitAmount);
+    if (!name || !Number.isFinite(quantity) || quantity < 1 || quantity > MAX_TOTAL_QUANTITY) {
+      sendPrivateApiJson(res, 400, { error: "Each order item needs a name and a quantity between 1 and 99." });
+      return;
+    }
+    if (!Number.isFinite(unitAmount) || unitAmount < 0) {
+      sendPrivateApiJson(res, 400, { error: `A valid unit price is required for ${name}.` });
+      return;
+    }
+    items.push({
+      name: name.slice(0, 200),
+      quantity,
+      unitAmount: parseFloat(unitAmount.toFixed(2)),
+      totalAmount: parseFloat((unitAmount * quantity).toFixed(2)),
+      productId: raw?.productId ? String(raw.productId) : null
+    });
+  }
+
+  if (!items.length) {
+    sendPrivateApiJson(res, 400, { error: "At least one item is required to record an order." });
+    return;
+  }
+
+  const paymentMethod = MANUAL_PAYMENT_METHODS.includes(body.paymentMethod) ? body.paymentMethod : "other";
+  const customerName = String(body.customerName || "").trim().slice(0, 200) || null;
+  const customerEmail = String(body.customerEmail || "").trim().toLowerCase() || null;
+  const shippingAddress = String(body.shippingAddress || "").trim().slice(0, 500) || null;
+  const shippingMethod = String(body.shippingMethod || "").trim().slice(0, 100) || null;
+  const shippingAmount = Math.max(0, Number(body.shippingAmount) || 0);
+  const notes = String(body.notes || "").trim().slice(0, 500) || null;
+
+  // Optional legacy import number (the two pre-existing IRL orders).
+  // Must be a positive integer; the unique constraint rejects collisions
+  // and the shared sequence is then synced upward to max(order_number).
+  let legacyOrderNumber = null;
+  if (body.legacyOrderNumber !== undefined && body.legacyOrderNumber !== null && body.legacyOrderNumber !== "") {
+    legacyOrderNumber = Math.floor(Number(body.legacyOrderNumber));
+    if (!Number.isFinite(legacyOrderNumber) || legacyOrderNumber < 1) {
+      sendPrivateApiJson(res, 400, { error: "A legacy order number must be a positive number (e.g. 1 or 2)." });
+      return;
+    }
+  }
+
+  const subtotal = parseFloat(items.reduce((sum, item) => sum + item.totalAmount, 0).toFixed(2));
+  const total = parseFloat((subtotal + shippingAmount).toFixed(2));
+  const now = Date.now();
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Idempotency for double-submit/retry: the second attempt finds the
+    // existing order and returns it without re-allocating a number or
+    // touching inventory again.
+    if (clientRequestId) {
+      const existing = await client.query(
+        `SELECT id, order_number FROM orders WHERE client_request_id = $1 LIMIT 1`,
+        [clientRequestId]
+      );
+      if (existing.rows.length) {
+        await client.query("COMMIT");
+        const row = existing.rows[0];
+        sendPrivateApiJson(res, 200, {
+          ok: true,
+          existing: true,
+          orderId: row.id,
+          orderNumber: formatOrderNumber(row.order_number)
+        });
+        return;
+      }
+    }
+
+    // Decrement inventory with the same row-lock pattern as the Stripe
+    // webhook, so online and manual orders share one inventory system.
+    // A completed IRL sale has physically left stock, so decrements are
+    // clamped at zero (matching the dashboard's adjustStock convention)
+    // rather than blocking the record of a real-world sale.
+    const stockWarnings = [];
+    const locked = await client.query(
+      `SELECT inventory FROM inventory_state WHERE id = 'all' FOR UPDATE`
+    );
+    const inventory = normalizeInventoryDocument(locked.rows[0]?.inventory || {});
+    for (const item of items) {
+      if (!item.productId) continue;
+      const entry = inventory[item.productId];
+      if (!entry || entry.stock === null) continue;
+      const stock = Number(entry.stock);
+      if (!Number.isFinite(stock)) continue;
+      if (stock < item.quantity) {
+        stockWarnings.push({ productId: item.productId, requestedQty: item.quantity, availableStock: stock });
+      }
+      inventory[item.productId].stock = Math.max(0, stock - item.quantity);
+      inventory[item.productId].lastUpdated = now;
+    }
+    await client.query(
+      `INSERT INTO inventory_state (id, inventory)
+      VALUES ('all', $1::jsonb)
+      ON CONFLICT (id)
+      DO UPDATE SET inventory = EXCLUDED.inventory`,
+      [JSON.stringify(inventory)]
+    );
+
+    // Allocate the order number. Normal orders take the next value from
+    // the shared atomic sequence; legacy imports supply their own number
+    // and the sequence is then synced upward so it can never re-issue a
+    // taken number.
+    const inserted = await client.query(
+      `INSERT INTO orders (
+        order_number, source, client_request_id, customer_name,
+        customer_email, shipping_address, shipping_method,
+        shipping_amount, payment_method, payment_status, items,
+        subtotal, total, currency, notes, created_at, updated_at
+      ) VALUES (
+        CASE WHEN $5::bigint IS NULL THEN nextval('${LO_ORDER_NUMBER_SEQUENCE}') ELSE $5::bigint END,
+        'irl', $1, $2, $3, $4, $6, $7, $8, 'paid', $9::jsonb, $10, $11, 'GBP', $12, $13, $13
+      )
+      ON CONFLICT (client_request_id) DO NOTHING
+      RETURNING id, order_number`,
+      [
+        clientRequestId,
+        customerName,
+        customerEmail,
+        shippingAddress,
+        legacyOrderNumber,
+        shippingMethod,
+        shippingAmount,
+        paymentMethod,
+        JSON.stringify(items),
+        subtotal,
+        total,
+        notes,
+        now
+      ]
+    );
+
+    if (!inserted.rows.length) {
+      // Unique constraint violation on the legacy order number.
+      await client.query("ROLLBACK");
+      sendPrivateApiJson(res, 409, {
+        error: `Order LO-${String(legacyOrderNumber).padStart(3, "0")} already exists. Leave the order number blank to take the next available number.`
+      });
+      return;
+    }
+
+    const newOrder = inserted.rows[0];
+
+    // Sync the shared sequence upward so it always knows about numbers
+    // allocated by legacy imports. Never moves the sequence backwards,
+    // and is skipped entirely when nothing has been allocated yet
+    // (is_called = false, no orders) so LO-001 is never skipped.
+    if (legacyOrderNumber) {
+      await client.query(
+        `SELECT CASE
+          WHEN NOT (SELECT is_called FROM ${LO_ORDER_NUMBER_SEQUENCE})
+               AND (SELECT COALESCE(MAX(order_number), 0) FROM orders) = 0
+          THEN NULL
+          ELSE setval('${LO_ORDER_NUMBER_SEQUENCE}',
+               GREATEST(
+                 (SELECT COALESCE(MAX(order_number), 0) FROM orders),
+                 (SELECT last_value FROM ${LO_ORDER_NUMBER_SEQUENCE})
+               ), true)
+        END`
+      );
+    }
+
+    // Seed the fulfilment status so manual orders behave exactly like
+    // online orders in the existing status system ("new" is also the
+    // implicit default when a record is absent).
+    await client.query(
+      `INSERT INTO order_status_records (order_id, status, updated_at)
+      VALUES ($1, 'new', $2)
+      ON CONFLICT (order_id) DO NOTHING`,
+      [newOrder.id, now]
+    );
+
+    await client.query("COMMIT");
+
+    console.log("create-order: manual order recorded", {
+      orderId: newOrder.id,
+      orderNumber: formatOrderNumber(newOrder.order_number),
+      items: items.length,
+      total,
+      stockWarnings: stockWarnings.length
+    });
+
+    sendPrivateApiJson(res, 200, {
+      ok: true,
+      existing: false,
+      orderId: newOrder.id,
+      orderNumber: formatOrderNumber(newOrder.order_number),
+      stockWarnings
+    });
+  } catch (error) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // Ignore rollback failures so the original error is reported.
+    }
+
+    if (error?.code === "23505" && String(error?.detail || "").includes("(order_number)=")) {
+      sendPrivateApiJson(res, 409, { error: "That order number is already taken. Please try again." });
+      return;
+    }
+
+    console.error("create-order error:", error);
+    sendPrivateApiJson(res, 500, { error: "The order could not be recorded. Please try again." });
+  } finally {
+    client.release();
+  }
+}
+
 async function loadCustomerAddresses(customerId) {
   const result = await pool.query(
     `SELECT addresses
@@ -1591,8 +1951,35 @@ async function handleGetOrders(req, res) {
       ? sessions.data[sessions.data.length - 1].id
       : null;
 
+    // Attach Little Oddities order numbers to online orders from the
+    // local orders table, and append manual (IRL) orders so the whole
+    // ledger lives in one view. Historical online orders created
+    // before this table existed keep their Stripe-based references.
+    let manualOrders = [];
+    try {
+      const localOrders = await loadLocalOrders();
+      const numberBySessionId = new Map();
+      const numberByPaymentIntent = new Map();
+      manualOrders = localOrders.filter((o) => o.source === ORDER_SOURCE_IRL);
+      localOrders
+        .filter((o) => o.source === ORDER_SOURCE_ONLINE)
+        .forEach((o) => {
+          if (o.checkoutSessionId) numberBySessionId.set(o.checkoutSessionId, o.orderNumber);
+          if (o.paymentIntentId) numberByPaymentIntent.set(o.paymentIntentId, o.orderNumber);
+        });
+      orders.forEach((o) => {
+        o.orderNumber = numberBySessionId.get(o.id)
+          || (o.paymentIntentId && numberByPaymentIntent.get(o.paymentIntentId))
+          || null;
+      });
+    } catch (localError) {
+      // The local orders table may not exist yet (migration pending).
+      // Keep serving Stripe-derived orders rather than failing.
+      console.error("get-orders: local orders could not be read:", localError.message);
+    }
+
     sendPrivateApiJson(res, 200, {
-      orders,
+      orders: [...manualOrders, ...orders],
       hasMore: !!sessions.has_more,
       nextCursor: (sessions.has_more && lastSessionId) ? lastSessionId : null
     });
@@ -1652,6 +2039,26 @@ async function handleCustomerOrders(req, res) {
 
     const statusById = new Map(statusRows.map((row) => [row.order_id, row.status]));
 
+    // Little Oddities order numbers come from the local orders table.
+    // A read failure (migration not yet applied) must not break the
+    // customer's order history.
+    let orderNumberBySessionId = new Map();
+    let localManualOrders = [];
+    try {
+      const localOrders = await loadLocalOrders();
+      orderNumberBySessionId = new Map(
+        localOrders
+          .filter((o) => o.source === ORDER_SOURCE_ONLINE && o.checkoutSessionId)
+          .map((o) => [o.checkoutSessionId, o.orderNumber])
+      );
+      localManualOrders = localOrders.filter(
+        (o) => o.source === ORDER_SOURCE_IRL &&
+          (o.customerEmail || "").trim().toLowerCase() === auth.customer.email
+      );
+    } catch (localError) {
+      console.error("customer-orders: local orders could not be read:", localError.message);
+    }
+
     const messages = ownOrders.map((s) => {
       const items = (s.line_items?.data || []).map((item) => ({
         name: item.description || "Treasure",
@@ -1665,6 +2072,7 @@ async function handleCustomerOrders(req, res) {
       return {
         id: s.id,
         shortId: s.id.slice(-8).toUpperCase(),
+        orderNumber: orderNumberBySessionId.get(s.id) || null,
         created: s.created * 1000,
         items,
         amountTotal: parseFloat((s.amount_total / 100).toFixed(2)),
@@ -1672,6 +2080,22 @@ async function handleCustomerOrders(req, res) {
         status,
         statusText: ORDER_STATUS_COPY[status] || ORDER_STATUS_COPY.new
       };
+    });
+
+    // Manual (IRL) orders recorded for this traveller's email appear
+    // in their history too, with the same LO-### reference.
+    localManualOrders.forEach((o) => {
+      messages.push({
+        id: o.id,
+        shortId: o.orderNumber || o.id,
+        orderNumber: o.orderNumber,
+        created: o.created,
+        items: o.items,
+        amountTotal: o.amountTotal,
+        currency: o.currency,
+        status: "new",
+        statusText: ORDER_STATUS_COPY.new
+      });
     });
 
     messages.sort((a, b) => b.created - a.created);
@@ -2116,6 +2540,35 @@ async function handleStripeWebhook(req, res) {
     orderItems
   };
 
+  // Snapshot of the session data persisted into the local orders table.
+  // Item names are not expanded in webhook payloads; the authoritative
+  // item detail for online orders remains the Stripe session (expanded
+  // on read), while the local record keeps the product ids/quantities.
+  const shippingAddr = session.shipping_details?.address || session.customer_details?.address || null;
+  const orderData = {
+    checkoutSessionId: session.id || null,
+    paymentIntentId: session.payment_intent || null,
+    customerName: session.customer_details?.name || "Unknown Traveller",
+    customerEmail: session.customer_details?.email || session.customer_email || null,
+    shippingAddress: shippingAddr
+      ? [shippingAddr.line1, shippingAddr.line2, shippingAddr.city, shippingAddr.state, shippingAddr.postal_code, shippingAddr.country]
+          .filter(Boolean)
+          .join(", ")
+      : null,
+    shippingMethod: session.metadata?.shippingLabel || null,
+    shippingAmount: parseFloat(session.metadata?.shippingAmount || "0"),
+    items: orderItems.map((item) => ({
+      name: item.id || "Treasure",
+      quantity: item.qty || 1,
+      unitAmount: 0,
+      totalAmount: 0
+    })),
+    subtotal: parseFloat(session.metadata?.subtotal || "0"),
+    total: parseFloat(session.metadata?.total || "0"),
+    currency: (session.currency || "gbp").toUpperCase(),
+    customerNote: session.metadata?.customerNote || null
+  };
+
   for (let attempt = 1; attempt <= STRIPE_WEBHOOK_MAX_CONFLICT_RETRIES; attempt += 1) {
     const client = await pool.connect();
     try {
@@ -2202,11 +2655,37 @@ async function handleStripeWebhook(req, res) {
         [JSON.stringify(inventory)]
       );
 
+      // Persist the local order and atomically allocate the next
+      // LO-### number from the shared sequence. Both happen inside
+      // this same transaction guarded by the stripe_webhook_events
+      // insert above, so a redelivered event can never create a
+      // second order, allocate another number, or decrement stock
+      // twice. The unique constraint on stripe_checkout_session_id
+      // is a second safety net.
+      const insertedOrder = await insertOnlineOrderInTx(client, orderData);
+      const allocatedOrderNumber = insertedOrder
+        ? formatOrderNumber(insertedOrder.order_number)
+        : null;
+
       await client.query("COMMIT");
       console.log("stripe-webhook: stock updated after payment", {
         ...paymentRef,
-        conflictRetries: attempt - 1
+        conflictRetries: attempt - 1,
+        orderNumber: allocatedOrderNumber || "(already recorded)"
       });
+
+      // Convenience only: record the LO-### on the PaymentIntent for
+      // reconciliation. The local order record remains authoritative,
+      // so a failure here is logged but never fails the webhook.
+      if (insertedOrder && orderData.paymentIntentId) {
+        try {
+          await stripe.paymentIntents.update(orderData.paymentIntentId, {
+            metadata: { orderNumber: allocatedOrderNumber }
+          });
+        } catch (metadataError) {
+          console.warn("stripe-webhook: could not stamp orderNumber onto PaymentIntent metadata:", metadataError.message);
+        }
+      }
 
       res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
       res.end("Stock updated.");
@@ -2786,6 +3265,18 @@ const server = http.createServer((req, res) => {
       console.error("get-orders: unexpected failure:", error);
       if (!res.headersSent) {
         sendPrivateApiJson(res, 500, { error: "The ledger could not be consulted. Please try again." });
+      } else {
+        res.end();
+      }
+    });
+    return;
+  }
+
+  if (isFunctionRoute(requestPath, "create-order")) {
+    handleCreateManualOrder(req, res).catch((error) => {
+      console.error("create-order: unexpected failure:", error);
+      if (!res.headersSent) {
+        sendPrivateApiJson(res, 500, { error: "The order could not be recorded. Please try again." });
       } else {
         res.end();
       }
