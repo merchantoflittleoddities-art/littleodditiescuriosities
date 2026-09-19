@@ -118,6 +118,70 @@ function formatOrderNumber(number) {
   return `LO-${String(Math.floor(n)).padStart(3, "0")}`;
 }
 
+/**
+ * Convert a YYYY-MM-DD calendar date to the BIGINT millisecond created_at
+ * representation. Noon UTC is the anchor: the UK is always within ±1h of
+ * UTC, so 12:00 UTC can never land on a different calendar day in
+ * Europe/London — the exact day the merchant selected survives storage
+ * and display unchanged, on both sides of a DST transition.
+ * Returns null for anything that is not a real calendar date.
+ */
+function orderDateStringToMs(value) {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const [y, m, d] = value.split("-").map(Number);
+  const ms = Date.UTC(y, m - 1, d, 12, 0, 0);
+  const check = new Date(ms);
+  if (
+    check.getUTCFullYear() !== y ||
+    check.getUTCMonth() !== m - 1 ||
+    check.getUTCDate() !== d
+  ) {
+    return null; /* rolled over, e.g. 2026-02-31 */
+  }
+  return ms;
+}
+
+/** Reverse of orderDateStringToMs — YYYY-MM-DD (UTC day) for date inputs. */
+function msToOrderDateString(ms) {
+  const n = Number(ms);
+  if (!Number.isFinite(n)) return null;
+  const d = new Date(n);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
+/**
+ * Validate manual (IRL) order items from a request body. Returns
+ * { items, error } — items carry name, quantity, unitAmount,
+ * totalAmount and an optional productId (null for custom/free-text
+ * items, which are inventory-neutral).
+ */
+function parseManualOrderItems(rawItems) {
+  const list = Array.isArray(rawItems) ? rawItems : [];
+  const items = [];
+  for (const raw of list) {
+    const name = String(raw?.name || "").trim();
+    const quantity = Math.floor(Number(raw?.quantity));
+    const unitAmount = Number(raw?.unitAmount);
+    if (!name || !Number.isFinite(quantity) || quantity < 1 || quantity > MAX_TOTAL_QUANTITY) {
+      return { items: null, error: "Each order item needs a name and a quantity between 1 and 99." };
+    }
+    if (!Number.isFinite(unitAmount) || unitAmount < 0) {
+      return { items: null, error: `A valid unit price is required for ${name}.` };
+    }
+    items.push({
+      name: name.slice(0, 200),
+      quantity,
+      unitAmount: parseFloat(unitAmount.toFixed(2)),
+      totalAmount: parseFloat((unitAmount * quantity).toFixed(2)),
+      productId: raw?.productId ? String(raw.productId) : null
+    });
+  }
+  if (!items.length) {
+    return { items: null, error: "At least one item is required to record an order." };
+  }
+  return { items, error: null };
+}
+
 /** Map an orders table row to the order shape used by the dashboard/customer views. */
 function mapLocalOrderRow(row) {
   const items = (row.items || []).map((item) => ({
@@ -155,7 +219,9 @@ function mapLocalOrderRow(row) {
   };
 }
 
-/** Load every local order and map it to the shared order shape. */
+/** Load every non-deleted local order, mapped to the shared order shape.
+    Soft-deleted orders (deleted_at set) are excluded everywhere this is
+    used: dashboard ledger, cards, stats, CSV export and customer history. */
 async function loadLocalOrders(client = pool) {
   const result = await client.query(
     `SELECT id, order_number, source, stripe_checkout_session_id,
@@ -163,7 +229,8 @@ async function loadLocalOrders(client = pool) {
             customer_email, shipping_address, shipping_method,
             shipping_amount, payment_method, payment_status, items,
             subtotal, total, currency, notes, created_at, updated_at
-     FROM orders`
+     FROM orders
+     WHERE deleted_at IS NULL`
   );
   return result.rows.map(mapLocalOrderRow);
 }
@@ -1367,30 +1434,9 @@ async function handleCreateManualOrder(req, res) {
     : null;
 
   const rawItems = Array.isArray(body.items) ? body.items : [];
-  const items = [];
-  for (const raw of rawItems) {
-    const name = String(raw?.name || "").trim();
-    const quantity = Math.floor(Number(raw?.quantity));
-    const unitAmount = Number(raw?.unitAmount);
-    if (!name || !Number.isFinite(quantity) || quantity < 1 || quantity > MAX_TOTAL_QUANTITY) {
-      sendPrivateApiJson(res, 400, { error: "Each order item needs a name and a quantity between 1 and 99." });
-      return;
-    }
-    if (!Number.isFinite(unitAmount) || unitAmount < 0) {
-      sendPrivateApiJson(res, 400, { error: `A valid unit price is required for ${name}.` });
-      return;
-    }
-    items.push({
-      name: name.slice(0, 200),
-      quantity,
-      unitAmount: parseFloat(unitAmount.toFixed(2)),
-      totalAmount: parseFloat((unitAmount * quantity).toFixed(2)),
-      productId: raw?.productId ? String(raw.productId) : null
-    });
-  }
-
-  if (!items.length) {
-    sendPrivateApiJson(res, 400, { error: "At least one item is required to record an order." });
+  const { items, error: itemsError } = parseManualOrderItems(rawItems);
+  if (itemsError) {
+    sendPrivateApiJson(res, 400, { error: itemsError });
     return;
   }
 
@@ -1410,6 +1456,17 @@ async function handleCreateManualOrder(req, res) {
     legacyOrderNumber = Math.floor(Number(body.legacyOrderNumber));
     if (!Number.isFinite(legacyOrderNumber) || legacyOrderNumber < 1) {
       sendPrivateApiJson(res, 400, { error: "A legacy order number must be a positive number (e.g. 1 or 2)." });
+      return;
+    }
+  }
+
+  // Optional selectable order date (YYYY-MM-DD). Manual orders may be
+  // back-dated; online orders always keep the real webhook timestamp.
+  let orderDateMs = null;
+  if (body.orderDate !== undefined && body.orderDate !== null && body.orderDate !== "") {
+    orderDateMs = orderDateStringToMs(String(body.orderDate).trim());
+    if (orderDateMs === null) {
+      sendPrivateApiJson(res, 400, { error: "The order date must be a valid date (YYYY-MM-DD)." });
       return;
     }
   }
@@ -1485,7 +1542,7 @@ async function handleCreateManualOrder(req, res) {
         subtotal, total, currency, notes, created_at, updated_at
       ) VALUES (
         CASE WHEN $5::bigint IS NULL THEN nextval('${LO_ORDER_NUMBER_SEQUENCE}') ELSE $5::bigint END,
-        'irl', $1, $2, $3, $4, $6, $7, $8, 'paid', $9::jsonb, $10, $11, 'GBP', $12, $13, $13
+        'irl', $1, $2, $3, $4, $6, $7, $8, 'paid', $9::jsonb, $10, $11, 'GBP', $12, $13, $14
       )
       ON CONFLICT (client_request_id) DO NOTHING
       RETURNING id, order_number`,
@@ -1502,6 +1559,7 @@ async function handleCreateManualOrder(req, res) {
         subtotal,
         total,
         notes,
+        orderDateMs ?? now,
         now
       ]
     );
@@ -1577,6 +1635,318 @@ async function handleCreateManualOrder(req, res) {
 
     console.error("create-order error:", error);
     sendPrivateApiJson(res, 500, { error: "The order could not be recorded. Please try again." });
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Apply the inventory difference between an order's stored items and its
+ * new items inside the caller's transaction (inventory_state row already
+ * locked FOR UPDATE). Increasing quantity / adding a product decrements
+ * stock (clamped at zero, matching creation); decreasing quantity /
+ * removing a product adds stock back. Items without a productId are
+ * inventory-neutral, exactly as at creation.
+ *
+ * Known limitation (approved, documented): when the original order was
+ * recorded while stock was clamped at zero, the exact historical
+ * decrement is not recoverable — restorations here may give back stock
+ * that was never taken. No audit column exists by design; the merchant
+ * can correct stock manually in the Inventory tab, and clamp situations
+ * are surfaced as stock warnings rather than silently guessed.
+ */
+function applyInventoryItemDelta(inventory, oldItems, newItems, now, warnings) {
+  const oldQty = new Map();
+  const newQty = new Map();
+  for (const item of Array.isArray(oldItems) ? oldItems : []) {
+    if (!item?.productId) continue;
+    oldQty.set(item.productId, (oldQty.get(item.productId) || 0) + (Number(item.quantity) || 0));
+  }
+  for (const item of Array.isArray(newItems) ? newItems : []) {
+    if (!item?.productId) continue;
+    newQty.set(item.productId, (newQty.get(item.productId) || 0) + (Number(item.quantity) || 0));
+  }
+
+  const productIds = new Set([...oldQty.keys(), ...newQty.keys()]);
+  for (const productId of productIds) {
+    const delta = (newQty.get(productId) || 0) - (oldQty.get(productId) || 0);
+    if (!delta) continue;
+
+    const entry = inventory[productId];
+    if (!entry || entry.stock === null) continue;
+    const stock = Number(entry.stock);
+    if (!Number.isFinite(stock)) continue;
+
+    if (delta > 0) {
+      if (stock < delta) {
+        warnings.push({ productId, requestedQty: delta, availableStock: stock });
+      }
+      inventory[productId].stock = Math.max(0, stock - delta);
+    } else {
+      /* delta is negative → stock is added back */
+      inventory[productId].stock = stock - delta;
+    }
+    inventory[productId].lastUpdated = now;
+  }
+}
+
+/**
+ * Edit an existing Manual (IRL) order — Merchant Dashboard.
+ * Online (Stripe) orders are rejected: Stripe remains their source of
+ * truth and their identifiers are never editable. The order's UUID,
+ * LO-### number, client_request_id and Stripe identifiers are never
+ * accepted in the payload, so editing can never allocate a new order
+ * number or consume a sequence value. Inventory is adjusted by the
+ * difference between stored and new items inside the same transaction
+ * (row-locked), so retries are inherently idempotent — the delta of an
+ * already-applied edit is zero.
+ */
+async function handleUpdateOrder(req, res) {
+  if (req.method !== "POST") {
+    sendPrivateApiJson(res, 405, { error: "Method not allowed." });
+    return;
+  }
+
+  const token = getDashboardBearerToken(req);
+  if (!verifyDashboardToken(token)) {
+    sendPrivateApiJson(res, 401, { error: "Unauthorised. Please log in again." });
+    return;
+  }
+
+  let body;
+  try {
+    body = JSON.parse(await readRequestBody(req) || "{}");
+  } catch {
+    sendPrivateApiJson(res, 400, { error: "Invalid JSON body." });
+    return;
+  }
+
+  const orderId = String(body.orderId || "").trim();
+  if (!orderId) {
+    sendPrivateApiJson(res, 400, { error: "An orderId is required." });
+    return;
+  }
+
+  const { items, error: itemsError } = parseManualOrderItems(body.items);
+  if (itemsError) {
+    sendPrivateApiJson(res, 400, { error: itemsError });
+    return;
+  }
+
+  let orderDateMs = null;
+  if (body.orderDate !== undefined && body.orderDate !== null && body.orderDate !== "") {
+    orderDateMs = orderDateStringToMs(String(body.orderDate).trim());
+    if (orderDateMs === null) {
+      sendPrivateApiJson(res, 400, { error: "The order date must be a valid date (YYYY-MM-DD)." });
+      return;
+    }
+  }
+
+  const paymentMethod = MANUAL_PAYMENT_METHODS.includes(body.paymentMethod) ? body.paymentMethod : "other";
+  const customerName = String(body.customerName || "").trim().slice(0, 200) || null;
+  const customerEmail = String(body.customerEmail || "").trim().toLowerCase() || null;
+  const shippingAddress = String(body.shippingAddress || "").trim().slice(0, 500) || null;
+  const shippingMethod = String(body.shippingMethod || "").trim().slice(0, 100) || null;
+  const shippingAmount = Math.max(0, Number(body.shippingAmount) || 0);
+  const notes = String(body.notes || "").trim().slice(0, 500) || null;
+
+  const subtotal = parseFloat(items.reduce((sum, item) => sum + item.totalAmount, 0).toFixed(2));
+  const total = parseFloat((subtotal + shippingAmount).toFixed(2));
+  const now = Date.now();
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Row-lock the order: concurrent edits serialise here, and a retried
+    // submission re-reads the already-updated row so the inventory delta
+    // is zero on the second pass (no double-decrement).
+    const existing = await client.query(
+      `SELECT id, order_number, source, deleted_at, items
+      FROM orders WHERE id = $1 FOR UPDATE`,
+      [orderId]
+    );
+
+    if (!existing.rows.length || existing.rows[0].deleted_at !== null) {
+      await client.query("ROLLBACK");
+      sendPrivateApiJson(res, 404, { error: "That order could not be found." });
+      return;
+    }
+    if (existing.rows[0].source !== ORDER_SOURCE_IRL) {
+      await client.query("ROLLBACK");
+      sendPrivateApiJson(res, 400, { error: "Only Manual (IRL) orders can be edited." });
+      return;
+    }
+
+    // Adjust inventory by the difference (same FOR UPDATE row-lock on
+    // inventory_state as order creation, inside the same transaction).
+    const stockWarnings = [];
+    const locked = await client.query(
+      `SELECT inventory FROM inventory_state WHERE id = 'all' FOR UPDATE`
+    );
+    const inventory = normalizeInventoryDocument(locked.rows[0]?.inventory || {});
+    applyInventoryItemDelta(inventory, existing.rows[0].items, items, now, stockWarnings);
+    await client.query(
+      `INSERT INTO inventory_state (id, inventory)
+      VALUES ('all', $1::jsonb)
+      ON CONFLICT (id)
+      DO UPDATE SET inventory = EXCLUDED.inventory`,
+      [JSON.stringify(inventory)]
+    );
+
+    await client.query(
+      `UPDATE orders SET
+        customer_name = $2,
+        customer_email = $3,
+        shipping_address = $4,
+        shipping_method = $5,
+        shipping_amount = $6,
+        payment_method = $7,
+        items = $8::jsonb,
+        subtotal = $9,
+        total = $10,
+        notes = $11,
+        created_at = COALESCE($12, created_at),
+        updated_at = $13
+      WHERE id = $1`,
+      [
+        orderId,
+        customerName,
+        customerEmail,
+        shippingAddress,
+        shippingMethod,
+        shippingAmount,
+        paymentMethod,
+        JSON.stringify(items),
+        subtotal,
+        total,
+        notes,
+        orderDateMs,
+        now
+      ]
+    );
+
+    await client.query("COMMIT");
+
+    console.log("update-order: manual order edited", {
+      orderId,
+      orderNumber: formatOrderNumber(existing.rows[0].order_number),
+      items: items.length,
+      total,
+      stockWarnings: stockWarnings.length
+    });
+
+    sendPrivateApiJson(res, 200, {
+      ok: true,
+      orderId,
+      orderNumber: formatOrderNumber(existing.rows[0].order_number),
+      stockWarnings
+    });
+  } catch (error) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // Ignore rollback failures so the original error is reported.
+    }
+    console.error("update-order error:", error);
+    sendPrivateApiJson(res, 500, { error: "The order could not be updated. Please try again." });
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Soft-delete an existing Manual (IRL) order — Merchant Dashboard.
+ * The row is retained (deleted_at set) so its LO-### number can never be
+ * re-issued (including via the legacy-import sequence sync, which uses
+ * MAX(order_number)), its order_status_records are preserved, and
+ * inventory is intentionally NOT touched: a recorded IRL sale has
+ * physically left stock, and deletion usually means a ledger mistake —
+ * the merchant corrects stock manually in the Inventory tab if needed.
+ * Online (Stripe) orders are rejected so Stripe reconciliation is never
+ * affected. Idempotent: deleting an already-deleted order is a no-op.
+ */
+async function handleDeleteOrder(req, res) {
+  if (req.method !== "POST") {
+    sendPrivateApiJson(res, 405, { error: "Method not allowed." });
+    return;
+  }
+
+  const token = getDashboardBearerToken(req);
+  if (!verifyDashboardToken(token)) {
+    sendPrivateApiJson(res, 401, { error: "Unauthorised. Please log in again." });
+    return;
+  }
+
+  let body;
+  try {
+    body = JSON.parse(await readRequestBody(req) || "{}");
+  } catch {
+    sendPrivateApiJson(res, 400, { error: "Invalid JSON body." });
+    return;
+  }
+
+  const orderId = String(body.orderId || "").trim();
+  if (!orderId) {
+    sendPrivateApiJson(res, 400, { error: "An orderId is required." });
+    return;
+  }
+
+  const now = Date.now();
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const existing = await client.query(
+      `SELECT id, order_number, source, deleted_at
+      FROM orders WHERE id = $1 FOR UPDATE`,
+      [orderId]
+    );
+
+    if (!existing.rows.length) {
+      await client.query("ROLLBACK");
+      sendPrivateApiJson(res, 404, { error: "That order could not be found." });
+      return;
+    }
+    if (existing.rows[0].source !== ORDER_SOURCE_IRL) {
+      await client.query("ROLLBACK");
+      sendPrivateApiJson(res, 400, { error: "Only Manual (IRL) orders can be deleted." });
+      return;
+    }
+
+    if (existing.rows[0].deleted_at === null) {
+      await client.query(
+        `UPDATE orders SET deleted_at = $2, updated_at = $2
+        WHERE id = $1 AND deleted_at IS NULL`,
+        [orderId, now]
+      );
+    }
+
+    await client.query("COMMIT");
+
+    const alreadyDeleted = existing.rows[0].deleted_at !== null;
+
+    console.log("delete-order: manual order soft-deleted", {
+      orderId,
+      orderNumber: formatOrderNumber(existing.rows[0].order_number),
+      alreadyDeleted
+    });
+
+    sendPrivateApiJson(res, 200, {
+      ok: true,
+      orderId,
+      orderNumber: formatOrderNumber(existing.rows[0].order_number),
+      alreadyDeleted
+    });
+  } catch (error) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // Ignore rollback failures so the original error is reported.
+    }
+    console.error("delete-order error:", error);
+    sendPrivateApiJson(res, 500, { error: "The order could not be deleted. Please try again." });
   } finally {
     client.release();
   }
@@ -3277,6 +3647,30 @@ const server = http.createServer((req, res) => {
       console.error("create-order: unexpected failure:", error);
       if (!res.headersSent) {
         sendPrivateApiJson(res, 500, { error: "The order could not be recorded. Please try again." });
+      } else {
+        res.end();
+      }
+    });
+    return;
+  }
+
+  if (isFunctionRoute(requestPath, "update-order")) {
+    handleUpdateOrder(req, res).catch((error) => {
+      console.error("update-order: unexpected failure:", error);
+      if (!res.headersSent) {
+        sendPrivateApiJson(res, 500, { error: "The order could not be updated. Please try again." });
+      } else {
+        res.end();
+      }
+    });
+    return;
+  }
+
+  if (isFunctionRoute(requestPath, "delete-order")) {
+    handleDeleteOrder(req, res).catch((error) => {
+      console.error("delete-order: unexpected failure:", error);
+      if (!res.headersSent) {
+        sendPrivateApiJson(res, 500, { error: "The order could not be deleted. Please try again." });
       } else {
         res.end();
       }

@@ -33,6 +33,8 @@ const LOGIN_URL               = "/api/dashboard-login";
 const ORDERS_URL              = "/api/get-orders";
 const GET_ORDER_STATUS_URL    = "/api/get-order-status";
 const UPDATE_ORDER_STATUS_URL = "/api/update-order-status";
+const UPDATE_ORDER_URL        = "/api/update-order";
+const DELETE_ORDER_URL        = "/api/delete-order";
 
 /** Configuration for each fulfilment status */
 const STATUS_CONFIG = {
@@ -248,6 +250,23 @@ function formatDateShort(timestamp) {
   });
 }
 
+/**
+ * Stored order dates are noon-UTC-anchored BIGINT ms, so reading them
+ * back with UTC methods always returns the exact calendar day that was
+ * selected — no local-timezone shift. Returns YYYY-MM-DD for date inputs.
+ */
+function toDateInputValue(timestamp) {
+  const d = new Date(Number(timestamp));
+  if (isNaN(d.getTime())) return "";
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
+/** Today's date in the merchant's local timezone, for the date input default. */
+function todayToInputValue() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 /* ============================================================
    Module: Rendering
    ============================================================ */
@@ -298,6 +317,13 @@ function buildOrderCard(order) {
                data-order-id="${order.id}">${nextLabel}</button>`
     : `<span style="font-size:0.8rem;color:var(--text-muted);font-style:italic;">Order complete ✦</span>`;
 
+  /* Only Manual (IRL) orders can be edited or deleted — online orders
+     stay under Stripe's control. */
+  const manageBtns = order.source === "irl"
+    ? `<button class="btn-secondary btn-status-sm" data-action="edit-order" data-order-id="${order.id}">Edit</button>
+       <button class="btn-secondary btn-status-sm" data-action="delete-order" data-order-id="${order.id}" style="color:#c0392b;">Delete</button>`
+    : "";
+
   const newBadge = status === "new"
     ? `<span style="font-size:0.7rem;color:var(--status-new);font-weight:bold;letter-spacing:0.05em;">NEW</span>`
     : "";
@@ -346,6 +372,7 @@ function buildOrderCard(order) {
 
       <div class="order-card-actions">
         ${advanceBtn}
+        ${manageBtns}
       </div>
     </article>
   `;
@@ -394,6 +421,13 @@ function buildLedgerRow(order) {
     ? `<button class="btn-status btn-status-sm" data-action="advance" data-order-id="${order.id}">${nextLabel}</button>`
     : `<span class="ledger-done">✦ Done</span>`;
 
+  /* Only Manual (IRL) orders can be edited or deleted — online orders
+     stay under Stripe's control. */
+  const manageBtns = order.source === "irl"
+    ? `<button class="btn-secondary btn-status-sm" data-action="edit-order" data-order-id="${order.id}">Edit</button>
+       <button class="btn-secondary btn-status-sm" data-action="delete-order" data-order-id="${order.id}" style="color:#c0392b;">Delete</button>`
+    : "";
+
   return `
     <tr data-order-id="${order.id}">
       <td data-label="Order"><span class="order-badge">${escapeHtml(orderDisplayRef(order))}</span></td>
@@ -405,6 +439,7 @@ function buildLedgerRow(order) {
       <td data-label="Actions" class="ledger-col-actions">
         <button class="btn-secondary btn-status-sm" data-action="view" data-order-id="${order.id}">View</button>
         ${advanceBtn}
+        ${manageBtns}
       </td>
     </tr>`;
 }
@@ -776,16 +811,18 @@ function manualOrderItemRowHtml() {
     </div>`;
 }
 
-function addManualOrderItem() {
-  const container = document.getElementById("add-order-items");
+function addManualOrderItem(containerSelector = "#add-order-items", prefix = "add-order") {
+  const container = document.querySelector(containerSelector);
   if (!container) return;
   container.insertAdjacentHTML("beforeend", manualOrderItemRowHtml());
   const row = container.lastElementChild;
-  wireManualOrderItemRow(row);
+  wireManualOrderItemRow(row, { container: containerSelector, prefix });
 }
 
-function wireManualOrderItemRow(row) {
+function wireManualOrderItemRow(row, opts = {}) {
   if (!row) return;
+  const containerSelector = opts.container || "#add-order-items";
+  const recalcPrefix      = opts.prefix    || "add-order";
   const productSelect = row.querySelector(".aoi-product");
   const nameInput     = row.querySelector(".aoi-name");
   const qtyInput      = row.querySelector(".aoi-qty");
@@ -800,26 +837,26 @@ function wireManualOrderItemRow(row) {
     } else {
       nameInput.style.display = "";
     }
-    recalcManualOrderTotal();
+    recalcManualOrderTotal(recalcPrefix);
   });
-  nameInput?.addEventListener("input", recalcManualOrderTotal);
-  qtyInput?.addEventListener("input", recalcManualOrderTotal);
-  priceInput?.addEventListener("input", recalcManualOrderTotal);
+  nameInput?.addEventListener("input", () => recalcManualOrderTotal(recalcPrefix));
+  qtyInput?.addEventListener("input", () => recalcManualOrderTotal(recalcPrefix));
+  priceInput?.addEventListener("input", () => recalcManualOrderTotal(recalcPrefix));
   row.querySelector(".aoi-remove")?.addEventListener("click", () => {
-    const container = document.getElementById("add-order-items");
+    const container = document.querySelector(containerSelector);
     if (container && container.children.length > 1) {
       row.remove();
     }
-    recalcManualOrderTotal();
+    recalcManualOrderTotal(recalcPrefix);
   });
 }
 
-/** Collect items; returns null + shows an error when invalid. */
-function collectManualOrderItems() {
+/** Collect items from an items container; returns null + error when invalid. */
+function collectManualOrderItems(containerSelector = "#add-order-items") {
   const items = [];
   let error = null;
 
-  document.querySelectorAll("#add-order-items .add-order-item-row").forEach((row) => {
+  document.querySelectorAll(`${containerSelector} .add-order-item-row`).forEach((row) => {
     const productSelect = row.querySelector(".aoi-product");
     const nameInput     = row.querySelector(".aoi-name");
     const qty           = Math.floor(Number(row.querySelector(".aoi-qty")?.value));
@@ -851,21 +888,25 @@ function collectManualOrderItems() {
   return { items, error };
 }
 
-function recalcManualOrderTotal() {
-  const { items, error } = collectManualOrderItems();
-  const totalEl = document.getElementById("add-order-total");
+function recalcManualOrderTotal(prefix = "add-order") {
+  const { items, error } = collectManualOrderItems(`#${prefix}-items`);
+  const totalEl = document.getElementById(`${prefix}-total`);
   if (!totalEl) return;
   if (error) { totalEl.textContent = "—"; return; }
-  const shipping = Math.max(0, Number(document.getElementById("add-order-shipping-amount")?.value) || 0);
+  const shipping = Math.max(0, Number(document.getElementById(`${prefix}-shipping-amount`)?.value) || 0);
   const subtotal = items.reduce((sum, i) => sum + i.unitAmount * i.quantity, 0);
   totalEl.textContent = `£${(subtotal + shipping).toFixed(2)}`;
 }
 
-function setAddOrderError(message) {
-  const el = document.getElementById("add-order-error");
+function setFormError(prefix, message) {
+  const el = document.getElementById(`${prefix}-error`);
   if (!el) return;
   el.textContent = message || "";
   el.classList.toggle("hidden", !message);
+}
+
+function setAddOrderError(message) {
+  setFormError("add-order", message);
 }
 
 async function openAddOrderModal() {
@@ -892,6 +933,10 @@ async function openAddOrderModal() {
   const shippingAmount = document.getElementById("add-order-shipping-amount");
   if (shippingAmount) shippingAmount.value = "0";
 
+  /* Default the order date to today (merchant's local calendar day) */
+  const orderDate = document.getElementById("add-order-order-date");
+  if (orderDate) orderDate.value = todayToInputValue();
+
   manualOrderClientRequestId = crypto.randomUUID();
   modal.classList.remove("hidden");
   recalcManualOrderTotal();
@@ -910,9 +955,11 @@ async function submitManualOrder() {
   if (error) { setAddOrderError(error); return; }
 
   const legacyRaw = document.getElementById("add-order-legacy-number")?.value || "";
+  const orderDate = (document.getElementById("add-order-order-date")?.value || "").trim();
   const payload = {
     clientRequestId: manualOrderClientRequestId,
     items,
+    ...(orderDate ? { orderDate } : {}),
     paymentMethod: document.getElementById("add-order-payment")?.value || "other",
     shippingMethod: document.getElementById("add-order-shipping-method")?.value || "Other",
     shippingAmount: Math.max(0, Number(document.getElementById("add-order-shipping-amount")?.value) || 0),
@@ -947,6 +994,173 @@ async function submitManualOrder() {
     setAddOrderError(submitError.message);
   } finally {
     if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "✒️ Record Order"; }
+  }
+}
+
+/* ============================================================
+   Module: Manual (IRL) Order Edit & Delete
+   Editing preserves the order's LO-### number and id; quantity
+   changes adjust stock via the server's item-difference logic.
+   Deleting soft-deletes (archive) — stock is never restored.
+   ============================================================ */
+
+async function openEditOrderModal(order) {
+  const modal = document.getElementById("modal-edit-order");
+  if (!modal || !order) return;
+
+  /* Ensure the catalogue is loaded before building item rows so the
+     Treasures dropdown lists real products (falls back to Custom-only). */
+  if (!allProducts.length) {
+    await fetchProductCatalogue().catch(() => {});
+  }
+
+  document.getElementById("edit-order-id").value = order.id;
+  document.getElementById("edit-order-ref").textContent = order.orderNumber || "";
+  document.getElementById("edit-order-customer-name").value = order.customerName === "Unknown Traveller" ? "" : (order.customerName || "");
+  document.getElementById("edit-order-customer-email").value = order.customerEmail === "Unknown" ? "" : (order.customerEmail || "");
+  document.getElementById("edit-order-payment").value = order.paymentMethod || "other";
+  document.getElementById("edit-order-shipping-method").value = order.shippingMethod || "Other";
+  document.getElementById("edit-order-shipping-amount").value = Number(order.shippingAmount || 0).toFixed(2);
+  document.getElementById("edit-order-shipping-address").value = order.shippingAddress || "";
+  document.getElementById("edit-order-notes").value = order.customerNote || "";
+  document.getElementById("edit-order-order-date").value = toDateInputValue(order.created);
+  setFormError("edit-order", "");
+
+  const container = document.getElementById("edit-order-items");
+  container.innerHTML = "";
+
+  const items = order.items?.length ? order.items : [{ name: "", quantity: 1, unitAmount: 0 }];
+  items.forEach((item) => {
+    container.insertAdjacentHTML("beforeend", manualOrderItemRowHtml());
+    const row = container.lastElementChild;
+    const select    = row.querySelector(".aoi-product");
+    const nameInput = row.querySelector(".aoi-name");
+    const knownProduct = item.productId && select.querySelector(`option[value="${CSS.escape(item.productId)}"]`);
+
+    if (knownProduct) {
+      select.value = item.productId;
+    } else {
+      select.value = "";
+      nameInput.style.display = "";
+      nameInput.value = item.name || "";
+    }
+    row.querySelector(".aoi-qty").value = item.quantity || 1;
+    row.querySelector(".aoi-price").value = Number(item.unitAmount || 0).toFixed(2);
+    wireManualOrderItemRow(row, { container: "#edit-order-items", prefix: "edit-order" });
+  });
+
+  modal.classList.remove("hidden");
+  recalcManualOrderTotal("edit-order");
+}
+
+function closeEditOrderModal() {
+  document.getElementById("modal-edit-order")?.classList.add("hidden");
+}
+
+async function submitEditOrder() {
+  const token = getToken();
+  if (!token) { clearToken(); showLogin(); return; }
+
+  const orderId = document.getElementById("edit-order-id")?.value;
+  if (!orderId) return;
+
+  const { items, error } = collectManualOrderItems("#edit-order-items");
+  if (error) { setFormError("edit-order", error); return; }
+
+  const orderDate = (document.getElementById("edit-order-order-date")?.value || "").trim();
+  const payload = {
+    orderId,
+    items,
+    orderDate: orderDate || undefined,
+    paymentMethod: document.getElementById("edit-order-payment")?.value || "other",
+    shippingMethod: document.getElementById("edit-order-shipping-method")?.value || "Other",
+    shippingAmount: Math.max(0, Number(document.getElementById("edit-order-shipping-amount")?.value) || 0),
+    customerName: (document.getElementById("edit-order-customer-name")?.value || "").trim() || undefined,
+    customerEmail: (document.getElementById("edit-order-customer-email")?.value || "").trim() || undefined,
+    shippingAddress: (document.getElementById("edit-order-shipping-address")?.value || "").trim() || undefined,
+    notes: (document.getElementById("edit-order-notes")?.value || "").trim() || undefined
+  };
+
+  const submitBtn = document.getElementById("edit-order-submit");
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = "Saving…"; }
+
+  try {
+    const response = await fetch(UPDATE_ORDER_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (response.status === 401) { clearToken(); showLogin(); return; }
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "The order could not be updated.");
+
+    closeEditOrderModal();
+    if (Array.isArray(data.stockWarnings) && data.stockWarnings.length) {
+      showToast("Order updated — some stock could not be fully deducted. Check the Supplies tab.");
+    } else {
+      showToast("Order updated.");
+    }
+    await loadAndRender();
+  } catch (submitError) {
+    setFormError("edit-order", submitError.message);
+  } finally {
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "✒️ Save Changes"; }
+  }
+}
+
+let deleteOrderTargetId = null;
+
+function openDeleteOrderModal(order) {
+  const modal = document.getElementById("modal-delete-order");
+  if (!modal || !order) return;
+
+  deleteOrderTargetId = order.id;
+  document.getElementById("delete-order-text").textContent =
+    `Delete order ${orderDisplayRef(order)} for ${order.customerName || "Unknown Traveller"}?`;
+  setFormError("delete-order", "");
+  modal.classList.remove("hidden");
+}
+
+function closeDeleteOrderModal() {
+  document.getElementById("modal-delete-order")?.classList.add("hidden");
+  deleteOrderTargetId = null;
+}
+
+async function confirmDeleteOrder() {
+  const token = getToken();
+  if (!token) { clearToken(); showLogin(); return; }
+  if (!deleteOrderTargetId) return;
+
+  const confirmBtn = document.getElementById("delete-order-confirm");
+  if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = "Deleting…"; }
+
+  try {
+    const response = await fetch(DELETE_ORDER_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`
+      },
+      body: JSON.stringify({ orderId: deleteOrderTargetId })
+    });
+
+    if (response.status === 401) { clearToken(); showLogin(); return; }
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "The order could not be deleted.");
+
+    closeDeleteOrderModal();
+    showToast("Order removed from the ledger. Stock was not changed.");
+    await loadAndRender();
+  } catch (deleteError) {
+    setFormError("delete-order", deleteError.message);
+  } finally {
+    if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = "🗑 Delete Order"; }
   }
 }
 
@@ -2540,6 +2754,20 @@ function initDashboardUI() {
       return;
     }
 
+    const editBtn = event.target.closest("[data-action='edit-order']");
+    if (editBtn) {
+      const order = allOrders.find((o) => o.id === editBtn.dataset.orderId);
+      if (order) openEditOrderModal(order);
+      return;
+    }
+
+    const deleteBtn = event.target.closest("[data-action='delete-order']");
+    if (deleteBtn) {
+      const order = allOrders.find((o) => o.id === deleteBtn.dataset.orderId);
+      if (order) openDeleteOrderModal(order);
+      return;
+    }
+
     const advanceBtn = event.target.closest("[data-action='advance']");
     if (!advanceBtn) return;
 
@@ -2575,6 +2803,21 @@ function initDashboardUI() {
     refreshOrderViews();
   });
 
+  /* Edit / Delete buttons inside the order detail modal */
+  orderModal?.addEventListener("click", (event) => {
+    const editBtn = event.target.closest("[data-action='edit-order']");
+    if (editBtn) {
+      const order = allOrders.find((o) => o.id === editBtn.dataset.orderId);
+      if (order) openEditOrderModal(order);
+      return;
+    }
+    const deleteBtn = event.target.closest("[data-action='delete-order']");
+    if (deleteBtn) {
+      const order = allOrders.find((o) => o.id === deleteBtn.dataset.orderId);
+      if (order) openDeleteOrderModal(order);
+    }
+  });
+
   /* Load older orders (cursor pagination) */
   document.getElementById("load-older")?.addEventListener("click", loadOlderOrders);
 
@@ -2597,6 +2840,30 @@ function initDashboardUI() {
   const addOrderModal = document.getElementById("modal-add-order");
   addOrderModal?.addEventListener("click", (event) => {
     if (event.target === addOrderModal) closeAddOrderModal();
+  });
+
+  /* Manual (IRL) order editing */
+  document.getElementById("edit-order-form")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    submitEditOrder();
+  });
+  document.getElementById("edit-order-item-add")?.addEventListener("click", () => addManualOrderItem("#edit-order-items", "edit-order"));
+  document.getElementById("edit-order-shipping-amount")?.addEventListener("input", () => recalcManualOrderTotal("edit-order"));
+  document.getElementById("edit-order-submit")?.addEventListener("click", submitEditOrder);
+  document.getElementById("modal-edit-order-close")?.addEventListener("click", closeEditOrderModal);
+  document.getElementById("edit-order-cancel")?.addEventListener("click", closeEditOrderModal);
+  const editOrderModal = document.getElementById("modal-edit-order");
+  editOrderModal?.addEventListener("click", (event) => {
+    if (event.target === editOrderModal) closeEditOrderModal();
+  });
+
+  /* Manual (IRL) order deletion (soft delete) */
+  document.getElementById("delete-order-confirm")?.addEventListener("click", confirmDeleteOrder);
+  document.getElementById("modal-delete-order-close")?.addEventListener("click", closeDeleteOrderModal);
+  document.getElementById("delete-order-cancel")?.addEventListener("click", closeDeleteOrderModal);
+  const deleteOrderModal = document.getElementById("modal-delete-order");
+  deleteOrderModal?.addEventListener("click", (event) => {
+    if (event.target === deleteOrderModal) closeDeleteOrderModal();
   });
 
   /* Logout */

@@ -677,13 +677,21 @@
 
         <div class="form-grid-2">
           <div class="form-group">
+            <label for="add-order-order-date">Order date *</label>
+            <input type="date" id="add-order-order-date" required>
+            <small style="display:block;color:var(--text-muted);font-size:0.8rem;margin-top:0.25rem;">
+              When the sale actually happened — change it to back-enter a past order.
+            </small>
+          </div>
+          <div class="form-group">
             <label for="add-order-shipping-amount">Shipping amount (£)</label>
             <input type="number" id="add-order-shipping-amount" min="0" step="0.01" value="0">
           </div>
-          <div class="form-group">
-            <label for="add-order-legacy-number">Order number (legacy import only)</label>
-            <input type="number" id="add-order-legacy-number" min="1" step="1" placeholder="Leave blank for LO-###">
-          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="add-order-legacy-number">Order number (legacy import only)</label>
+          <input type="number" id="add-order-legacy-number" min="1" step="1" placeholder="Leave blank for LO-###">
         </div>
 
         <div class="form-group">
@@ -706,6 +714,123 @@
       <div class="modal-footer">
         <button type="button" class="btn-secondary" id="add-order-cancel">Cancel</button>
         <button type="button" class="btn-secondary" id="add-order-submit">✒️ Record Order</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Edit Manual (IRL) Order (preserves the order's LO-### number) -->
+  <div id="modal-edit-order" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="modal-edit-order-title">
+    <div class="modal-card" style="max-width:720px;">
+      <div class="modal-header">
+        <h2 id="modal-edit-order-title">✒️ Edit Order <span id="edit-order-ref" style="font-weight:normal;"></span></h2>
+        <button type="button" class="modal-close" id="modal-edit-order-close" aria-label="Close edit form">&times;</button>
+      </div>
+      <form id="edit-order-form" class="modal-body">
+        <p class="panel-subtitle" style="margin:0 0 0.5rem;">
+          Editing keeps this order's Little Oddities order number (LO-###) unchanged.
+          Quantity changes adjust stock automatically.
+        </p>
+        <input type="hidden" id="edit-order-id">
+
+        <div class="form-group">
+          <label>Treasures *</label>
+          <div id="edit-order-items">
+            <!-- Item rows are populated by merchant-dashboard.js -->
+          </div>
+          <button type="button" class="btn-secondary" id="edit-order-item-add">+ Add another treasure</button>
+        </div>
+
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label for="edit-order-customer-name">Traveller name</label>
+            <input type="text" id="edit-order-customer-name" placeholder="Optional for IRL orders" autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label for="edit-order-customer-email">Traveller email</label>
+            <input type="email" id="edit-order-customer-email" placeholder="Optional — links the order to their account" autocomplete="off">
+          </div>
+        </div>
+
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label for="edit-order-payment">Payment method *</label>
+            <select id="edit-order-payment">
+              <option value="cash">💵 Cash</option>
+              <option value="card">💳 Card</option>
+              <option value="other">✦ Other</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="edit-order-shipping-method">Journey / fulfilment *</label>
+            <select id="edit-order-shipping-method">
+              <option value="Local pickup">🕯️ Local pickup</option>
+              <option value="Royal Courier">✉️ Royal Courier</option>
+              <option value="Royal Courier (Tracked)">📦 Royal Courier (Tracked)</option>
+              <option value="Other">✦ Other</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label for="edit-order-order-date">Order date *</label>
+            <input type="date" id="edit-order-order-date" required>
+            <small style="display:block;color:var(--text-muted);font-size:0.8rem;margin-top:0.25rem;">
+              When the sale actually happened — safe to back-date.
+            </small>
+          </div>
+          <div class="form-group">
+            <label for="edit-order-shipping-amount">Shipping amount (£)</label>
+            <input type="number" id="edit-order-shipping-amount" min="0" step="0.01" value="0">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="edit-order-shipping-address">Shipping address</label>
+          <input type="text" id="edit-order-shipping-address" placeholder="Only if this order is being posted" autocomplete="off">
+        </div>
+
+        <div class="form-group">
+          <label for="edit-order-notes">Order notes</label>
+          <textarea id="edit-order-notes" rows="3" maxlength="500" placeholder="Optional notes about this order"></textarea>
+        </div>
+
+        <div class="form-group">
+          <label>Total</label>
+          <strong id="edit-order-total">£0.00</strong>
+        </div>
+
+        <p id="edit-order-error" class="hidden" style="color:#c0392b;margin:0.25rem 0 0;"></p>
+      </form>
+      <div class="modal-footer">
+        <button type="button" class="btn-secondary" id="edit-order-cancel">Cancel</button>
+        <button type="button" class="btn-secondary" id="edit-order-submit">✒️ Save Changes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Delete Manual (IRL) Order (soft delete — the order is archived, never hard-removed) -->
+  <div id="modal-delete-order" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="modal-delete-order-title">
+    <div class="modal-card" style="max-width:540px;">
+      <div class="modal-header">
+        <h2 id="modal-delete-order-title">🗑 Delete Order</h2>
+        <button type="button" class="modal-close" id="modal-delete-order-close" aria-label="Close delete confirmation">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p id="delete-order-text" style="margin:0 0 0.75rem;"></p>
+        <p style="margin:0 0 0.75rem;font-size:0.9rem;">
+          Deleting removes this order from the ledger, customer history and CSV exports.
+          Its Little Oddities order number is retired <strong>forever</strong> and can never be reused.
+        </p>
+        <p style="margin:0;font-size:0.9rem;color:#c0392b;">
+          ⚠️ Deleting does <strong>not</strong> restore stock. If inventory needs correcting,
+          adjust it manually in the Supplies tab.
+        </p>
+        <p id="delete-order-error" class="hidden" style="color:#c0392b;margin:0.5rem 0 0;"></p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-secondary" id="delete-order-cancel">Cancel</button>
+        <button type="button" class="btn-secondary" id="delete-order-confirm" style="color:#fff;background:#c0392b;border-color:#c0392b;">🗑 Delete Order</button>
       </div>
     </div>
   </div>
@@ -921,7 +1046,7 @@
     script.js is NOT loaded here — no customer cart logic is involved.
     -->
   <!-- Versioned once to replace the previously long-cached dashboard bundle. -->
-  <script src="merchant-dashboard.js?v=2026-09-12-1" defer></script>
+  <script src="merchant-dashboard.js?v=2026-09-19-1" defer></script>
 
 </body>
 </html>
