@@ -210,6 +210,32 @@ try {
     t2Tracking.length === 1 && t2Tracking[0].ordered_quantity === 5 && t2Tracking[0].inventory_applied === 2,
     JSON.stringify(t2Tracking));
 
+  /* ── 2b. Duplicate product rows accumulate actual inventory_applied ── */
+  // Reset p2 stock so we can test accumulation with actual deductions.
+  const p2Reset = (await db.query(`SELECT inventory FROM inventory_state WHERE id='all'`)).rows[0].inventory;
+  p2Reset.p2.stock = 5;
+  await db.query(`INSERT INTO inventory_state (id, inventory) VALUES ('all', $1::jsonb) ON CONFLICT (id) DO UPDATE SET inventory = EXCLUDED.inventory`, [JSON.stringify(p2Reset)]);
+  check("T2b: p2 reset to 5 for duplicate-row test", (await stockOf("p2")) === 5, `p2=${await stockOf("p2")}`);
+
+  const t2b = await apiPost("/api/create-order", {
+    clientRequestId: "inv-test-2b",
+    items: [
+      { name: "Dup A", quantity: 3, unitAmount: 3, productId: "p2" },
+      { name: "Dup B", quantity: 3, unitAmount: 3, productId: "p2" }
+    ],
+    paymentMethod: "cash",
+    shippingMethod: "Local pickup"
+  }, token);
+  check("T2b: order with duplicate product rows created", t2b.status === 200 && t2b.json?.ok === true, JSON.stringify(t2b.json));
+  check("T2b: stock decremented by total applied (p2: 5 → 0)", (await stockOf("p2")) === 0, `p2=${await stockOf("p2")}`);
+  const t2bOrderId = t2b.json?.orderId;
+  const t2bTracking = t2bOrderId ? (await db.query(
+    `SELECT ordered_quantity, inventory_applied FROM order_inventory_tracking WHERE order_id=$1`,
+    [t2bOrderId]
+  )).rows : [];
+  check("T2b: tracking accumulates applied to 5 (not 3)", t2bTracking.length === 1 && Number(t2bTracking[0].inventory_applied) === 5 && Number(t2bTracking[0].ordered_quantity) === 6,
+    JSON.stringify(t2bTracking));
+
   /* ── 3. Edit clamped order 5 → 1 → correct stock restoration based on applied ── */
   const t2OrderId = t2.json?.orderId;
   const t3 = await apiPost("/api/update-order", {
@@ -219,16 +245,20 @@ try {
   }, token);
   check("T3: edit succeeds", t3.status === 200 && t3.json?.ok === true, JSON.stringify(t3.json));
   check("T3: stock restored by applied delta (p2: 0 → 1, restored 1 not 4)", (await stockOf("p2")) === 1, `p2=${await stockOf("p2")}`);
-  const t3Tracking = await trackingForOrder("p2");
+  const t3TrackingResult = await db.query(
+    `SELECT ordered_quantity, inventory_applied FROM order_inventory_tracking WHERE order_id=$1`,
+    [t2OrderId]
+  );
+  const t3Tracking = t3TrackingResult.rows;
   check("T3: tracking updated to ordered=1, applied=1",
     t3Tracking.length === 1 && t3Tracking[0].ordered_quantity === 1 && t3Tracking[0].inventory_applied === 1,
     JSON.stringify(t3Tracking));
 
   /* ── 4. Edit order from 5 → 7 while stock is 0 → applied remains 2 ── */
   // Restore p2 to 2 so we can create a fresh clamped order for this scenario.
-  const p2Reset = (await db.query(`SELECT inventory FROM inventory_state WHERE id='all'`)).rows[0].inventory;
-  p2Reset.p2.stock = 2;
-  await db.query(`INSERT INTO inventory_state (id, inventory) VALUES ('all', $1::jsonb) ON CONFLICT (id) DO UPDATE SET inventory = EXCLUDED.inventory`, [JSON.stringify(p2Reset)]);
+  const p2Reset2 = (await db.query(`SELECT inventory FROM inventory_state WHERE id='all'`)).rows[0].inventory;
+  p2Reset2.p2.stock = 2;
+  await db.query(`INSERT INTO inventory_state (id, inventory) VALUES ('all', $1::jsonb) ON CONFLICT (id) DO UPDATE SET inventory = EXCLUDED.inventory`, [JSON.stringify(p2Reset2)]);
   check("T4: p2 reset to 2 for fresh clamped order", (await stockOf("p2")) === 2, `p2=${await stockOf("p2")}`);
 
   const t4Order = await apiPost("/api/create-order", {
@@ -411,6 +441,30 @@ try {
   const t12Delete = await apiPost("/api/delete-order", { orderId: t12.json?.orderId }, token);
   check("T12: delete succeeds for pre-tracking order", t12Delete.status === 200 && t12Delete.json?.ok === true, JSON.stringify(t12Delete.json));
   check("T12: p1 stock unchanged after delete (no guessed restoration)", (await stockOf("p1")) === 3, `p1=${await stockOf("p1")}`);
+
+  /* ── 13. Editing an untracked historical order does not guess or mutate inventory ── */
+  const t13 = await apiPost("/api/create-order", {
+    clientRequestId: "inv-test-13-legacy",
+    legacyOrderNumber: 100,
+    items: [{ name: "Legacy untracked item", quantity: 3, unitAmount: 3, productId: "p1" }],
+    paymentMethod: "cash",
+    shippingMethod: "Local pickup"
+  }, token);
+  check("T13: legacy order created for untracked edit test", t13.status === 200 && t13.json?.orderNumber === "LO-100", JSON.stringify(t13.json));
+
+  // Remove tracking to simulate a pre-tracking historical order
+  await db.query(`DELETE FROM order_inventory_tracking WHERE order_id=$1`, [t13.json?.orderId]);
+  const t13Before = await stockOf("p1");
+  const t13Edit = await apiPost("/api/update-order", {
+    orderId: t13.json?.orderId,
+    items: [{ name: "Legacy untracked item edited", quantity: 1, unitAmount: 3, productId: "p1" }],
+    paymentMethod: "cash"
+  }, token);
+  check("T13: edit of untracked historical order succeeds without mutating inventory",
+    t13Edit.status === 200 && t13Edit.json?.ok === true && (await stockOf("p1")) === t13Before,
+    `status=${t13Edit.status} p1=${await stockOf("p1")}`);
+  const t13TrackingResult = await db.query(`SELECT COUNT(*) AS n FROM order_inventory_tracking WHERE order_id=$1`, [t13.json?.orderId]);
+  check("T13: no tracking rows created for historical untracked order", Number(t13TrackingResult.rows[0]?.n ?? -1) === 0, `n=${JSON.stringify(t13TrackingResult.rows)}`);
 
   /* ── Final summary ── */
   const failed = results.filter((r) => !r.ok);

@@ -349,8 +349,8 @@ try {
   const delRetry = await apiPost("/api/delete-order", { orderId: irl2.json?.orderId }, token);
   check("deleting an already-deleted order is a safe no-op (retry-safe)",
     delRetry.status === 200 && delRetry.json?.alreadyDeleted === true);
-  check("deletion of an order with no tracked inventory leaves stock untouched (p1 still 45, p2 still 1)",
-    (await stockOf("p1")) === 45 && (await stockOf("p2")) === 1,
+  check("deletion of an order with no tracked inventory leaves stock untouched (p1 still 50, p2 still 1)",
+    (await stockOf("p1")) === 50 && (await stockOf("p2")) === 1,
     `p1=${await stockOf("p1")} p2=${await stockOf("p2")}`);
   check("editing a deleted order is rejected (404)",
     (await apiPost("/api/update-order", { orderId: irl2.json?.orderId, items: [{ name: "X", quantity: 1, unitAmount: 1 }] }, token)).status === 404);

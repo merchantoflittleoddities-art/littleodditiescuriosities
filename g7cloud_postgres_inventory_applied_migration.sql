@@ -16,11 +16,12 @@
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS order_inventory_tracking (
-  order_id           TEXT NOT NULL,
+  order_id           UUID NOT NULL,
   product_id         TEXT NOT NULL,
   ordered_quantity   INTEGER NOT NULL DEFAULT 0,
   inventory_applied  INTEGER NOT NULL DEFAULT 0,
-  PRIMARY KEY (order_id, product_id)
+  PRIMARY KEY (order_id, product_id),
+  FOREIGN KEY (order_id) REFERENCES orders(id)
 );
 
 CREATE INDEX IF NOT EXISTS order_inventory_tracking_product_id_idx

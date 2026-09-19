@@ -1555,7 +1555,7 @@ async function handleCreateManualOrder(req, res) {
       }
       inventory[item.productId].stock = Math.max(0, stock - requested);
       inventory[item.productId].lastUpdated = now;
-      appliedByProduct.set(item.productId, applied);
+      appliedByProduct.set(item.productId, (appliedByProduct.get(item.productId) || 0) + applied);
       orderedByProduct.set(item.productId, (orderedByProduct.get(item.productId) || 0) + requested);
     }
     await client.query(
@@ -1717,10 +1717,7 @@ async function applyInventoryItemDelta(inventory, oldItems, newItems, now, warni
   }
 
   if (!hasTracking) {
-    for (const item of Array.isArray(oldItems) ? oldItems : []) {
-      if (!item?.productId) continue;
-      oldAppliedByProduct.set(item.productId, (oldAppliedByProduct.get(item.productId) || 0) + (Number(item.quantity) || 0));
-    }
+    return { newAppliedByProduct: new Map(), newQtyByProduct: new Map() };
   }
 
   for (const item of Array.isArray(newItems) ? newItems : []) {
