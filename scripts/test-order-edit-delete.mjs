@@ -37,7 +37,8 @@ function formatOrderNumber(n) {
 const INVENTORY_SEED = JSON.stringify({
   "p1": { productId: "p1", stock: 50, available: true },
   "p2": { productId: "p2", stock: 1, available: true },
-  "p3": { productId: "p3", stock: null, available: true }
+  "p3": { productId: "p3", stock: null, available: true },
+  "p4": { productId: "p4", stock: 3, available: true }
 });
 
 function buildSchemaStatements() {
@@ -412,6 +413,114 @@ try {
     statuses?.statuses?.[irl1Id]?.status);
   const finalRow = (await db.query(`SELECT status FROM order_status_records WHERE order_id=$1`, [irl1Id])).rows[0];
   check("completed status survives later edits", finalRow.status === "completed");
+
+  /* ── 15. productId persistence through the edit cycle (regression for LO-005 bug) ── */
+  const trackedOrder = await apiPost("/api/create-order", {
+    clientRequestId: "productid-persistence-test",
+    items: [{ name: "Ghostly Valentine", quantity: 2, unitAmount: 5.5, productId: "p4" }],
+    paymentMethod: "cash",
+    shippingMethod: "Local pickup"
+  }, token);
+  check("catalogue order with productId created successfully",
+    trackedOrder.status === 200 && trackedOrder.json?.orderNumber === "LO-005", JSON.stringify(trackedOrder.json));
+  const trackedOrderId = trackedOrder.json?.orderId;
+
+  const trackingRowsAfterCreate = await db.query(
+    `SELECT product_id, ordered_quantity, inventory_applied FROM order_inventory_tracking WHERE order_id=$1`,
+    [trackedOrderId]
+  );
+  check("tracking row created for catalogue order at creation (p4: qty=2, applied=2)",
+    trackingRowsAfterCreate.rows.length === 1 &&
+    trackingRowsAfterCreate.rows[0].product_id === "p4" &&
+    Number(trackingRowsAfterCreate.rows[0].ordered_quantity) === 2 &&
+    Number(trackingRowsAfterCreate.rows[0].inventory_applied) === 2,
+    JSON.stringify(trackingRowsAfterCreate.rows));
+  check("stock decremented at creation for tracked product (p4: 3 → 1)",
+    (await stockOf("p4")) === 1, `p4 stock=${await stockOf("p4")}`);
+
+  const editKeepProduct = await apiPost("/api/update-order", {
+    orderId: trackedOrderId,
+    items: [{ name: "Ghostly Valentine", quantity: 3, unitAmount: 5.5, productId: "p4" }],
+    paymentMethod: "cash"
+  }, token);
+  check("edit retaining same productId succeeds (qty 2 → 3, p4 stock 1 → 0)",
+    editKeepProduct.status === 200 && (await stockOf("p4")) === 0, `p4 stock=${await stockOf("p4")}`);
+  const dbAfterKeep = (await db.query(`SELECT items FROM orders WHERE id=$1`, [trackedOrderId])).rows[0];
+  check("productId survives DB round-trip after edit (not lost to null)",
+    dbAfterKeep && dbAfterKeep.items[0]?.productId === "p4", `productId=${dbAfterKeep?.items?.[0]?.productId}`);
+
+  const trackingAfterKeep = await db.query(
+    `SELECT product_id, ordered_quantity, inventory_applied FROM order_inventory_tracking WHERE order_id=$1`,
+    [trackedOrderId]
+  );
+  check("tracking row updated after productId-preserving edit (p4: qty=3, applied=3)",
+    trackingAfterKeep.rows.length === 1 &&
+    trackingAfterKeep.rows[0].product_id === "p4" &&
+    Number(trackingAfterKeep.rows[0].ordered_quantity) === 3 &&
+    Number(trackingAfterKeep.rows[0].inventory_applied) === 3,
+    JSON.stringify(trackingAfterKeep.rows));
+
+  const shortageEdit = await apiPost("/api/update-order", {
+    orderId: trackedOrderId,
+    items: [{ name: "Ghostly Valentine", quantity: 5, unitAmount: 5.5, productId: "p4" }],
+    paymentMethod: "cash"
+  }, token);
+  check("quantity increase beyond available stock clamps and surfaces warning (p4 stock stays 0)",
+    shortageEdit.status === 200 &&
+    Array.isArray(shortageEdit.json?.stockWarnings) && shortageEdit.json.stockWarnings.length > 0 &&
+    (await stockOf("p4")) === 0,
+    `warnings=${JSON.stringify(shortageEdit.json?.stockWarnings)} p4 stock=${await stockOf("p4")}`);
+  const trackingAfterShortage = await db.query(
+    `SELECT product_id, ordered_quantity, inventory_applied FROM order_inventory_tracking WHERE order_id=$1`,
+    [trackedOrderId]
+  );
+  check("tracking row reflects clamped inventory_applied (p4: qty=5, applied=3, stock=0)",
+    trackingAfterShortage.rows.length === 1 &&
+    Number(trackingAfterShortage.rows[0].ordered_quantity) === 5 &&
+    Number(trackingAfterShortage.rows[0].inventory_applied) === 3,
+    JSON.stringify(trackingAfterShortage.rows));
+
+  const retryShortage = await apiPost("/api/update-order", {
+    orderId: trackedOrderId,
+    items: [{ name: "Ghostly Valentine", quantity: 5, unitAmount: 5.5, productId: "p4" }],
+    paymentMethod: "cash"
+  }, token);
+  check("re-issuing same shortage edit is idempotent (p4 stock stays 0, no double-clamp)",
+    retryShortage.status === 200 && (await stockOf("p4")) === 0, `p4 stock=${await stockOf("p4")}`);
+
+  const delTracked = await apiPost("/api/delete-order", { orderId: trackedOrderId }, token);
+  check("deleting tracked order succeeds (soft delete)",
+    delTracked.status === 200 && delTracked.json?.ok === true, JSON.stringify(delTracked.json));
+  check("deleting restores exactly inventory_applied (3), not ordered_quantity (5) (p4: 0 → 3)",
+    (await stockOf("p4")) === 3, `p4 stock=${await stockOf("p4")}`);
+  const trackingAfterDelete = await db.query(
+    `SELECT product_id, inventory_applied FROM order_inventory_tracking WHERE order_id=$1`,
+    [trackedOrderId]
+  );
+  check("tracking rows cleaned up on delete (order is gone, inventory already restored)",
+    trackingAfterDelete.rows.length === 0, JSON.stringify(trackingAfterDelete.rows));
+
+  const customOrder = await apiPost("/api/create-order", {
+    clientRequestId: "custom-productid-null-test",
+    items: [{ name: "Hand-written scroll", quantity: 1, unitAmount: 4 }],
+    paymentMethod: "cash",
+    shippingMethod: "Local pickup"
+  }, token);
+  check("custom/free-text order created without productId",
+    customOrder.status === 200 && customOrder.json?.orderNumber === "LO-006", JSON.stringify(customOrder.json));
+  const customOrderId = customOrder.json?.orderId;
+  const customDbRow = (await db.query(`SELECT items FROM orders WHERE id=$1`, [customOrderId])).rows[0];
+  check("custom order stored with productId null (not an empty string)",
+    customDbRow && customDbRow.items[0]?.productId === null, `productId=${customDbRow?.items?.[0]?.productId}`);
+  const customTracking = await db.query(
+    `SELECT product_id FROM order_inventory_tracking WHERE order_id=$1`,
+    [customOrderId]
+  );
+  check("no tracking row created for custom order (inventory-neutral)",
+    customTracking.rows.length === 0, JSON.stringify(customTracking.rows));
+  check("custom order creation did not affect catalogue stock (p1=50, p2=1, p3=null, p4=3)",
+    (await stockOf("p1")) === 50 && (await stockOf("p2")) === 1 && (await stockOf("p3")) === null && (await stockOf("p4")) === 3,
+    `p1=${await stockOf("p1")} p2=${await stockOf("p2")} p3=${await stockOf("p3")} p4=${await stockOf("p4")}`);
 } finally {
   server.kill();
   await pgServer.stop();
