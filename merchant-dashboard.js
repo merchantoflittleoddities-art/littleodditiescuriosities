@@ -2834,7 +2834,7 @@ function initDashboardUI() {
   document.getElementById("add-order-button")?.addEventListener("click", openAddOrderModal);
   document.getElementById("modal-add-order-close")?.addEventListener("click", closeAddOrderModal);
   document.getElementById("add-order-cancel")?.addEventListener("click", closeAddOrderModal);
-  document.getElementById("add-order-item-add")?.addEventListener("click", addManualOrderItem);
+  document.getElementById("add-order-item-add")?.addEventListener("click", () => addManualOrderItem());
   document.getElementById("add-order-shipping-amount")?.addEventListener("input", recalcManualOrderTotal);
   document.getElementById("add-order-submit")?.addEventListener("click", submitManualOrder);
   const addOrderModal = document.getElementById("modal-add-order");
