@@ -945,11 +945,8 @@ function buildProductCard(product) {
     <article class="card product-card">
       <div class="product-image">
         ${hasImage
-          ? `<img src="${imageSrc}" alt="${product.name}"
-               onload="this.parentElement.querySelector('.image-placeholder-card')?.style.display='none';"
-               onerror="this.style.display='none';">`
-          : ""}
-        <div class="image-placeholder-card">A photograph of this treasure will appear soon.</div>
+          ? `<img src="${imageSrc}" alt="${product.name}" onerror="this.style.display='none';this.parentElement.insertAdjacentHTML('beforeend','<div class=\\'image-placeholder-card\\'>A photograph of this treasure will appear soon.</div>');">`
+          : '<div class="image-placeholder-card">A photograph of this treasure will appear soon.</div>'}
       </div>
       <div class="product-icon">${product.icon || "✦"}</div>
       <div class="product-copy">
