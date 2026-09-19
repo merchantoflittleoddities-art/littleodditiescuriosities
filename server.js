@@ -188,7 +188,8 @@ function mapLocalOrderRow(row) {
     name: item.name || "Treasure",
     quantity: item.quantity || 1,
     unitAmount: Number(item.unitAmount ?? item.unit_amount ?? 0),
-    totalAmount: Number(item.totalAmount ?? item.total_amount ?? 0)
+    totalAmount: Number(item.totalAmount ?? item.total_amount ?? 0),
+    productId: item.productId || null
   }));
 
   const subtotal = Number(row.subtotal ?? 0);
