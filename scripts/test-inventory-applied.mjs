@@ -309,6 +309,57 @@ try {
     t5Tracking.length === 1 && t5Tracking[0].ordered_quantity === 10 && t5Tracking[0].inventory_applied === 10,
     JSON.stringify(t5Tracking));
 
+  /* ── 5b. Replenish-then-no-qty-change edit must not re-deduct stock; qty increase deducts only newly available stock ── */
+  // Reset p1 to 5 so we can test the exact scenario: stock 5 → order 5 → stock 0 → replenish +5 → stock 5.
+  const p1ResetForT5b = (await db.query(`SELECT inventory FROM inventory_state WHERE id='all'`)).rows[0].inventory;
+  p1ResetForT5b.p1.stock = 5;
+  await db.query(`INSERT INTO inventory_state (id, inventory) VALUES ('all', $1::jsonb) ON CONFLICT (id) DO UPDATE SET inventory = EXCLUDED.inventory`, [JSON.stringify(p1ResetForT5b)]);
+  check("T5b: p1 reset to 5 for replenish-then-edit test", (await stockOf("p1")) === 5, `p1=${await stockOf("p1")}`);
+
+  const t5b = await apiPost("/api/create-order", {
+    clientRequestId: "inv-test-5b",
+    items: [{ name: "Replenish edit target", quantity: 5, unitAmount: 3, productId: "p1" }],
+    paymentMethod: "cash",
+    shippingMethod: "Local pickup"
+  }, token);
+  check("T5b: order created with stock 5, qty 5", t5b.status === 200 && t5b.json?.ok === true && (await stockOf("p1")) === 0, JSON.stringify(t5b.json));
+  const t5bOrderId = t5b.json?.orderId;
+  const t5bTracking0 = (await db.query(`SELECT inventory_applied FROM order_inventory_tracking WHERE order_id=$1`, [t5bOrderId])).rows[0];
+  check("T5b: initial tracking applied=5", t5bTracking0 && Number(t5bTracking0.inventory_applied) === 5, JSON.stringify(t5bTracking0));
+
+  const t5bReplenish = await apiPost("/api/update-inventory", {
+    action: "adjustStock",
+    productId: "p1",
+    value: 5
+  }, token);
+  check("T5b: replenish p1 by 5", t5bReplenish.status === 200 && t5bReplenish.json?.ok === true, JSON.stringify(t5bReplenish.json));
+  check("T5b: p1 stock after replenish = 5", (await stockOf("p1")) === 5, `p1=${await stockOf("p1")}`);
+
+  // Edit without changing quantities — should NOT re-deduct the replenished stock.
+  const t5bNoopEdit = await apiPost("/api/update-order", {
+    orderId: t5bOrderId,
+    items: [{ name: "Replenish edit target", quantity: 5, unitAmount: 3, productId: "p1" }],
+    customerName: "Updated Name",
+    notes: "No-op quantity edit",
+    paymentMethod: "cash"
+  }, token);
+  check("T5b: no-qty edit succeeds without re-deducting stock", t5bNoopEdit.status === 200 && t5bNoopEdit.json?.ok === true && (await stockOf("p1")) === 5, `p1=${await stockOf("p1")}`);
+  const t5bTrackingAfterNoop = (await db.query(`SELECT inventory_applied FROM order_inventory_tracking WHERE order_id=$1`, [t5bOrderId])).rows[0];
+  check("T5b: tracking applied remains 5 after no-qty edit", t5bTrackingAfterNoop && Number(t5bTrackingAfterNoop.inventory_applied) === 5, JSON.stringify(t5bTrackingAfterNoop));
+
+  // Now increase quantity from 5 → 7 — should deduct only the newly available 2.
+  const t5bIncrease = await apiPost("/api/update-order", {
+    orderId: t5bOrderId,
+    items: [{ name: "Replenish edit target", quantity: 7, unitAmount: 3, productId: "p1" }],
+    paymentMethod: "cash"
+  }, token);
+  check("T5b: increase edit succeeds", t5bIncrease.status === 200 && t5bIncrease.json?.ok === true, JSON.stringify(t5bIncrease.json));
+  check("T5b: only newly available stock deducted (p1: 5 → 3, deducted 2)", (await stockOf("p1")) === 3, `p1=${await stockOf("p1")}`);
+  const t5bTrackingAfterIncrease = (await db.query(`SELECT ordered_quantity, inventory_applied FROM order_inventory_tracking WHERE order_id=$1`, [t5bOrderId])).rows[0];
+  check("T5b: tracking updated to ordered=7, applied=7",
+    t5bTrackingAfterIncrease && Number(t5bTrackingAfterIncrease.ordered_quantity) === 7 && Number(t5bTrackingAfterIncrease.inventory_applied) === 7,
+    JSON.stringify(t5bTrackingAfterIncrease));
+
   /* ── 6. Remove a product from an order → restore the actual applied amount ── */
   const t6Replenish = await apiPost("/api/update-inventory", {
     action: "adjustStock",
