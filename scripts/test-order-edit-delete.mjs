@@ -53,7 +53,8 @@ function buildSchemaStatements() {
     )`,
     fs.readFileSync(path.join(ROOT, "stripe_webhook_events.sql"), "utf8"),
     fs.readFileSync(path.join(ROOT, "g7cloud_postgres_orders_migration.sql"), "utf8"),
-    fs.readFileSync(path.join(ROOT, "g7cloud_postgres_soft_delete_migration.sql"), "utf8")
+    fs.readFileSync(path.join(ROOT, "g7cloud_postgres_soft_delete_migration.sql"), "utf8"),
+    fs.readFileSync(path.join(ROOT, "g7cloud_postgres_inventory_applied_migration.sql"), "utf8")
   ].join("\n;\n");
 
   return raw
@@ -314,8 +315,8 @@ try {
   const statusAfter = (await db.query(`SELECT status FROM order_status_records WHERE order_id=$1`, [irl1Id])).rows[0]?.status;
   check("editing does not modify order_status_records (status stays whatever it was)",
     neutral.status === 200 && statusBefore === statusAfter, `${statusBefore} → ${statusAfter}`);
-  check("items without productId are inventory-neutral during edits (removing tracked items restores stock: p1 45 → 50, p2 0 → 3)",
-    (await stockOf("p1")) === 50 && (await stockOf("p2")) === 3,
+  check("items without productId are inventory-neutral during edits (removing tracked items restores actual applied: p1 45 → 50, p2 0 → 1)",
+    (await stockOf("p1")) === 50 && (await stockOf("p2")) === 1,
     `p1=${await stockOf("p1")} p2=${await stockOf("p2")}`);
 
   /* Restore order 1 items back to p1×5 for later checks (p1 50 → 45) */
@@ -348,8 +349,8 @@ try {
   const delRetry = await apiPost("/api/delete-order", { orderId: irl2.json?.orderId }, token);
   check("deleting an already-deleted order is a safe no-op (retry-safe)",
     delRetry.status === 200 && delRetry.json?.alreadyDeleted === true);
-  check("deletion does NOT restore inventory (p1 still 45, p2 still 3)",
-    (await stockOf("p1")) === 45 && (await stockOf("p2")) === 3,
+  check("deletion of an order with no tracked inventory leaves stock untouched (p1 still 45, p2 still 1)",
+    (await stockOf("p1")) === 45 && (await stockOf("p2")) === 1,
     `p1=${await stockOf("p1")} p2=${await stockOf("p2")}`);
   check("editing a deleted order is rejected (404)",
     (await apiPost("/api/update-order", { orderId: irl2.json?.orderId, items: [{ name: "X", quantity: 1, unitAmount: 1 }] }, token)).status === 404);

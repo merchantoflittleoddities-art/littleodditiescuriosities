@@ -256,7 +256,7 @@ async function insertOnlineOrderInTx(client, orderData) {
       'card', 'paid', $8::jsonb, $9, $10, $11, $12, $13, $13
     )
     ON CONFLICT (stripe_checkout_session_id) DO NOTHING
-    RETURNING order_number`,
+    RETURNING id, order_number`,
     [
       orderData.checkoutSessionId,
       orderData.paymentIntentId,
@@ -274,6 +274,36 @@ async function insertOnlineOrderInTx(client, orderData) {
     ]
   );
   return result.rows[0] || null;
+}
+
+/* ============================================================
+   inventory_applied tracking helpers
+   ============================================================ */
+
+async function loadOrderInventoryTracking(client, orderId) {
+  const result = await client.query(
+    `SELECT product_id, ordered_quantity, inventory_applied
+     FROM order_inventory_tracking
+     WHERE order_id = $1`,
+    [orderId]
+  );
+  return result.rows;
+}
+
+async function upsertOrderInventoryTracking(client, orderId, productId, orderedQuantity, inventoryApplied) {
+  if (inventoryApplied <= 0 && orderedQuantity <= 0) return;
+  await client.query(
+    `INSERT INTO order_inventory_tracking (order_id, product_id, ordered_quantity, inventory_applied)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (order_id, product_id) DO UPDATE SET
+       ordered_quantity = EXCLUDED.ordered_quantity,
+       inventory_applied = EXCLUDED.inventory_applied`,
+    [orderId, productId, orderedQuantity, inventoryApplied]
+  );
+}
+
+async function deleteOrderInventoryTracking(client, orderId) {
+  await client.query(`DELETE FROM order_inventory_tracking WHERE order_id = $1`, [orderId]);
 }
 
 
@@ -1506,6 +1536,8 @@ async function handleCreateManualOrder(req, res) {
     // clamped at zero (matching the dashboard's adjustStock convention)
     // rather than blocking the record of a real-world sale.
     const stockWarnings = [];
+    const appliedByProduct = new Map();
+    const orderedByProduct = new Map();
     const locked = await client.query(
       `SELECT inventory FROM inventory_state WHERE id = 'all' FOR UPDATE`
     );
@@ -1516,11 +1548,15 @@ async function handleCreateManualOrder(req, res) {
       if (!entry || entry.stock === null) continue;
       const stock = Number(entry.stock);
       if (!Number.isFinite(stock)) continue;
-      if (stock < item.quantity) {
-        stockWarnings.push({ productId: item.productId, requestedQty: item.quantity, availableStock: stock });
+      const requested = item.quantity;
+      const applied = Math.min(stock, requested);
+      if (stock < requested) {
+        stockWarnings.push({ productId: item.productId, requestedQty: requested, availableStock: stock });
       }
-      inventory[item.productId].stock = Math.max(0, stock - item.quantity);
+      inventory[item.productId].stock = Math.max(0, stock - requested);
       inventory[item.productId].lastUpdated = now;
+      appliedByProduct.set(item.productId, applied);
+      orderedByProduct.set(item.productId, (orderedByProduct.get(item.productId) || 0) + requested);
     }
     await client.query(
       `INSERT INTO inventory_state (id, inventory)
@@ -1574,6 +1610,15 @@ async function handleCreateManualOrder(req, res) {
     }
 
     const newOrder = inserted.rows[0];
+
+    // Record inventory_applied per product so later edits and deletes
+    // can restore exactly what was taken, even when stock was clamped.
+    for (const [productId, applied] of appliedByProduct) {
+      await upsertOrderInventoryTracking(
+        client, newOrder.id, productId,
+        orderedByProduct.get(productId) || 0, applied
+      );
+    }
 
     // Sync the shared sequence upward so it always knows about numbers
     // allocated by legacy imports. Never moves the sequence backwards,
@@ -1643,51 +1688,84 @@ async function handleCreateManualOrder(req, res) {
 /**
  * Apply the inventory difference between an order's stored items and its
  * new items inside the caller's transaction (inventory_state row already
- * locked FOR UPDATE). Increasing quantity / adding a product decrements
- * stock (clamped at zero, matching creation); decreasing quantity /
- * removing a product adds stock back. Items without a productId are
- * inventory-neutral, exactly as at creation.
+ * locked FOR UPDATE). Uses the order_inventory_tracking table as the
+ * source of truth for how much stock was actually taken by the old
+ * items; missing tracking rows (pre-tracking orders) fall back to the
+ * ordered quantity so behaviour is unchanged for historical orders.
  *
- * Known limitation (approved, documented): when the original order was
- * recorded while stock was clamped at zero, the exact historical
- * decrement is not recoverable — restorations here may give back stock
- * that was never taken. No audit column exists by design; the merchant
- * can correct stock manually in the Inventory tab, and clamp situations
- * are surfaced as stock warnings rather than silently guessed.
+ * Increasing quantity / adding a product decrements stock (clamped at
+ * zero, matching creation); decreasing quantity / removing a product
+ * adds stock back. Items without a productId are inventory-neutral,
+ * exactly as at creation.
+ *
+ * Returns a Map of productId → new inventory_applied so the caller can
+ * persist the updated tracking rows.
  */
-function applyInventoryItemDelta(inventory, oldItems, newItems, now, warnings) {
-  const oldQty = new Map();
-  const newQty = new Map();
-  for (const item of Array.isArray(oldItems) ? oldItems : []) {
-    if (!item?.productId) continue;
-    oldQty.set(item.productId, (oldQty.get(item.productId) || 0) + (Number(item.quantity) || 0));
+async function applyInventoryItemDelta(inventory, oldItems, newItems, now, warnings, client, orderId) {
+  const oldAppliedByProduct = new Map();
+  const newQtyByProduct = new Map();
+  let hasTracking = false;
+
+  if (client && orderId) {
+    const trackingRows = await loadOrderInventoryTracking(client, orderId);
+    if (trackingRows.length) {
+      hasTracking = true;
+      for (const row of trackingRows) {
+        oldAppliedByProduct.set(row.product_id, Number(row.inventory_applied));
+      }
+    }
   }
+
+  if (!hasTracking) {
+    for (const item of Array.isArray(oldItems) ? oldItems : []) {
+      if (!item?.productId) continue;
+      oldAppliedByProduct.set(item.productId, (oldAppliedByProduct.get(item.productId) || 0) + (Number(item.quantity) || 0));
+    }
+  }
+
   for (const item of Array.isArray(newItems) ? newItems : []) {
     if (!item?.productId) continue;
-    newQty.set(item.productId, (newQty.get(item.productId) || 0) + (Number(item.quantity) || 0));
+    newQtyByProduct.set(item.productId, (newQtyByProduct.get(item.productId) || 0) + (Number(item.quantity) || 0));
   }
 
-  const productIds = new Set([...oldQty.keys(), ...newQty.keys()]);
+  const productIds = new Set([...oldAppliedByProduct.keys(), ...newQtyByProduct.keys()]);
+  const newAppliedByProduct = new Map();
+
   for (const productId of productIds) {
-    const delta = (newQty.get(productId) || 0) - (oldQty.get(productId) || 0);
-    if (!delta) continue;
+    const oldApplied = oldAppliedByProduct.get(productId) || 0;
+    const newQty = newQtyByProduct.get(productId) || 0;
+    const delta = newQty - oldApplied;
+    if (!delta) {
+      newAppliedByProduct.set(productId, oldApplied);
+      continue;
+    }
 
     const entry = inventory[productId];
-    if (!entry || entry.stock === null) continue;
+    if (!entry || entry.stock === null) {
+      newAppliedByProduct.set(productId, oldApplied);
+      continue;
+    }
     const stock = Number(entry.stock);
-    if (!Number.isFinite(stock)) continue;
+    if (!Number.isFinite(stock)) {
+      newAppliedByProduct.set(productId, oldApplied);
+      continue;
+    }
 
     if (delta > 0) {
       if (stock < delta) {
         warnings.push({ productId, requestedQty: delta, availableStock: stock });
       }
-      inventory[productId].stock = Math.max(0, stock - delta);
+      const newlyApplied = Math.max(0, Math.min(delta, stock));
+      inventory[productId].stock = Math.max(0, stock - newlyApplied);
+      newAppliedByProduct.set(productId, oldApplied + newlyApplied);
     } else {
-      /* delta is negative → stock is added back */
       inventory[productId].stock = stock - delta;
+      newAppliedByProduct.set(productId, oldApplied + delta);
     }
     inventory[productId].lastUpdated = now;
   }
+
+  return { newAppliedByProduct, newQtyByProduct };
 }
 
 /**
@@ -1780,12 +1858,16 @@ async function handleUpdateOrder(req, res) {
 
     // Adjust inventory by the difference (same FOR UPDATE row-lock on
     // inventory_state as order creation, inside the same transaction).
+    // For orders created before tracking existed, missing tracking rows
+    // are treated as zero applied so no stock is guessed.
     const stockWarnings = [];
     const locked = await client.query(
       `SELECT inventory FROM inventory_state WHERE id = 'all' FOR UPDATE`
     );
     const inventory = normalizeInventoryDocument(locked.rows[0]?.inventory || {});
-    applyInventoryItemDelta(inventory, existing.rows[0].items, items, now, stockWarnings);
+    const { newAppliedByProduct, newQtyByProduct } = await applyInventoryItemDelta(
+      inventory, existing.rows[0].items, items, now, stockWarnings, client, existing.rows[0].id
+    );
     await client.query(
       `INSERT INTO inventory_state (id, inventory)
       VALUES ('all', $1::jsonb)
@@ -1793,6 +1875,20 @@ async function handleUpdateOrder(req, res) {
       DO UPDATE SET inventory = EXCLUDED.inventory`,
       [JSON.stringify(inventory)]
     );
+
+    // Replace tracking rows so they always reflect the current applied
+    // quantities. Retrying the same edit is idempotent because the
+    // tracking rows are re-read at the start of the transaction, so
+    // the delta is zero on the second pass.
+    await deleteOrderInventoryTracking(client, existing.rows[0].id);
+    for (const [productId, applied] of newAppliedByProduct) {
+      if (applied > 0) {
+        await upsertOrderInventoryTracking(
+          client, existing.rows[0].id, productId,
+          newQtyByProduct.get(productId) || 0, applied
+        );
+      }
+    }
 
     await client.query(
       `UPDATE orders SET
@@ -1859,12 +1955,16 @@ async function handleUpdateOrder(req, res) {
  * Soft-delete an existing Manual (IRL) order — Merchant Dashboard.
  * The row is retained (deleted_at set) so its LO-### number can never be
  * re-issued (including via the legacy-import sequence sync, which uses
- * MAX(order_number)), its order_status_records are preserved, and
- * inventory is intentionally NOT touched: a recorded IRL sale has
- * physically left stock, and deletion usually means a ledger mistake —
- * the merchant corrects stock manually in the Inventory tab if needed.
+ * MAX(order_number)), its order_status_records are preserved.
+ *
+ * For orders with inventory_applied tracking, exactly the currently
+ * applied inventory amount is restored to stock and the tracking rows
+ * are removed. Orders without tracking (pre-tracking imports or items
+ * that were inventory-neutral) leave stock untouched.
+ *
  * Online (Stripe) orders are rejected so Stripe reconciliation is never
- * affected. Idempotent: deleting an already-deleted order is a no-op.
+ * affected. Idempotent: deleting an already-deleted order is a no-op,
+ * and the transactional guard prevents double restoration on retry.
  */
 async function handleDeleteOrder(req, res) {
   if (req.method !== "POST") {
@@ -1916,6 +2016,40 @@ async function handleDeleteOrder(req, res) {
     }
 
     if (existing.rows[0].deleted_at === null) {
+      const trackingRows = await client.query(
+        `SELECT product_id, inventory_applied FROM order_inventory_tracking WHERE order_id = $1`,
+        [orderId]
+      );
+
+      if (trackingRows.rows.length) {
+        const locked = await client.query(
+          `SELECT inventory FROM inventory_state WHERE id = 'all' FOR UPDATE`
+        );
+        const inventory = normalizeInventoryDocument(locked.rows[0]?.inventory || {});
+
+        for (const row of trackingRows.rows) {
+          const productId = row.product_id;
+          const applied = Number(row.inventory_applied);
+          if (!applied) continue;
+          const entry = inventory[productId];
+          if (!entry || entry.stock === null) continue;
+          const stock = Number(entry.stock);
+          if (!Number.isFinite(stock)) continue;
+          inventory[productId].stock = stock + applied;
+          inventory[productId].lastUpdated = now;
+        }
+
+        await client.query(
+          `INSERT INTO inventory_state (id, inventory)
+          VALUES ('all', $1::jsonb)
+          ON CONFLICT (id)
+          DO UPDATE SET inventory = EXCLUDED.inventory`,
+          [JSON.stringify(inventory)]
+        );
+
+        await deleteOrderInventoryTracking(client, orderId);
+      }
+
       await client.query(
         `UPDATE orders SET deleted_at = $2, updated_at = $2
         WHERE id = $1 AND deleted_at IS NULL`,
@@ -3036,6 +3170,14 @@ async function handleStripeWebhook(req, res) {
       const allocatedOrderNumber = insertedOrder
         ? formatOrderNumber(insertedOrder.order_number)
         : null;
+
+      if (insertedOrder) {
+        for (const { id, qty } of orderItems) {
+          const item = inventory[id];
+          if (!item || item.stock === null) continue;
+          await upsertOrderInventoryTracking(client, insertedOrder.id, id, qty, qty);
+        }
+      }
 
       await client.query("COMMIT");
       console.log("stripe-webhook: stock updated after payment", {
