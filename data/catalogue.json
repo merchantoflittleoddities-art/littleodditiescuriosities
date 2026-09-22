@@ -408,7 +408,10 @@
         "Sliding knot - size may vary"
       ],
       "packaging": "Special Packaging",
-      "images": [],
+      "images": [
+        "1.jpg",
+        "2.jpg"
+      ],
       "available": true
     },
     {
@@ -456,6 +459,8 @@
       "id": "rose-and-ritual",
       "name": "Rose & Ritual",
       "collection": "Forgotten Treasures",
+      "tier": "Dragon's Keepsake",
+      "price": 6.0,
       "description": "A solemn keepsake of red, pink and black beads, woven with quiet ceremony and no charm to speak for it.",
       "lore": "Before words, there were rituals: a candle lit the same hour each night, a rose laid where someone used to sit, a circle traced so many times it became a door. Devotion has always kept its own calendar, measured not in days but in repetitions. Some ceremonies mourn, and some insist — patiently, stubbornly — that what is loved is not yet lost. This treasure is woven in that spirit, each bead a small vow set in its place, the strand itself the circle that binds them. Its meaning is left deliberately unspoken, for the oldest rituals belong to whoever performs them.",
       "materials": [
@@ -472,6 +477,8 @@
       "id": "woodlands-wonderland",
       "name": "Woodlands Wonderland",
       "collection": "Enchanted Forest",
+      "tier": "Merchant's Heirloom",
+      "price": 8.0,
       "description": "A very mushroomy treasure: green and peach-pink beads beneath eight identical mushroom charms.",
       "lore": "Beyond the bramble gate there is a clearing where the mushrooms hold their own midsummer festival. No invitations are sent — none are needed. When the evening light turns peach and the moss deepens to green, eight of the little villagers step out in perfect unison, each one standing precisely where a mushroom stood the year before, and the year before that. The festival has no name, no music and no visitors, yet it has never once been missed. Some wanderers claim the woods feel warmer that night, as though the whole clearing were smiling. This treasure keeps a little of that festival in its keeping — eight small revelers, mid-celebration, forever.",
       "materials": [
@@ -482,7 +489,11 @@
         "Spacer beads",
         "Sliding knot - size may vary"
       ],
-      "images": [],
+      "images": [
+        "1.jpg",
+        "2.jpg",
+        "3.jpg"
+      ],
       "available": true
     }
   ]
