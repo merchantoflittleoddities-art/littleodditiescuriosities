@@ -8,14 +8,17 @@
  *      fields the site and Merchant Dashboard rely on.
  *   2. The five new product IDs are unique, slug-style and do not
  *      collide with existing products.
- *   3. Tier assignments follow the launch rules (three tiered, two
- *      deliberately untiered with no invented price).
+ *   3. Tier assignments follow the Stage 2 rules (all five tiered —
+ *      rose-and-ritual to Dragon's Keepsake £6.00 and
+ *      woodlands-wonderland to Merchant's Heirloom £8.00 in addition
+ *      to the three launch tiers).
  *   4. Materials explicitly name the required cord, beads, charms
  *      and spacers for each product (including the single red bead
  *      on Poison and the 8 identical mushroom charms).
  *   5. Rose & Ritual carries no charm and no spacer beads.
- *   6. Image folders exist for all five products and contain NO
- *      placeholder/fake image files.
+ *   6. Image folders exist and contain NO placeholder/fake image
+ *      files, and the wired `images` arrays for starlit-spores and
+ *      woodlands-wonderland match the genuine photos on disk.
  *   7. The Merchant Dashboard catalogue pathway (fetchProductCatalogue)
  *      surfaces all five products, including for manual IRL orders,
  *      and every existing collection value is a known collection.
@@ -96,9 +99,29 @@ for (const { id } of NEW_PRODUCTS) {
   check(`${id} materials is a non-empty array of strings`,
     Array.isArray(product.materials) && product.materials.length > 0 && product.materials.every((m) => typeof m === "string"));
   check(`${id} is available`, product.available === true);
-  check(`${id} declares no image files yet (real photography to follow, no placeholders)`,
-    Array.isArray(product.images) && product.images.length === 0);
 }
+
+/* Stage 2 wiring: the images arrays for products with genuine
+   photography on disk must reference the actual existing files
+   (repository convention: bare filenames like "1.jpg"). */
+const WIRED_IMAGES = {
+  "starlit-spores": ["1.jpg", "2.jpg"],
+  "woodlands-wonderland": ["1.jpg", "2.jpg", "3.jpg"]
+};
+
+for (const [id, expectedImages] of Object.entries(WIRED_IMAGES)) {
+  const product = products.find((p) => p.id === id);
+  const folder = path.join(IMAGE_ROOT, id);
+  const actualFiles = fs.existsSync(folder) ? fs.readdirSync(folder).sort() : [];
+  check(`${id} images array matches the ${actualFiles.length} genuine photo(s) on disk`,
+    JSON.stringify(product?.images) === JSON.stringify(expectedImages), JSON.stringify(product?.images));
+  check(`${id} wired image filenames all exist in its image folder`,
+    Array.isArray(product?.images) && product.images.every((img) => actualFiles.includes(img)),
+    actualFiles.join(", "));
+}
+const roseImages = products.find((p) => p.id === "rose-and-ritual")?.images;
+check("rose-and-ritual keeps an empty images array (no photography yet, no placeholders)",
+  Array.isArray(roseImages) && roseImages.length === 0, JSON.stringify(roseImages));
 
 /* ── 4. Tier assignment rules ──────────────────────────────── */
 
@@ -118,13 +141,11 @@ check("Poison price is 5.5 (Forgotten Treasures tier price)", poison?.price === 
 check("Petal & Potion is tiered Forgotten Treasures", petal?.tier === "Forgotten Treasures", petal?.tier);
 check("Petal & Potion price is 5.5 (Forgotten Treasures tier price)", petal?.price === 5.5, String(petal?.price));
 
-check("Rose & Ritual has NO tier assignment yet", !("tier" in rose) || rose.tier == null || rose.tier === "",
-  JSON.stringify(rose?.tier));
-check("Rose & Ritual has NO invented price", !("price" in rose) || rose.price == null, JSON.stringify(rose?.price));
+check("Rose & Ritual is tiered Dragon's Keepsake", rose?.tier === "Dragon's Keepsake", rose?.tier);
+check("Rose & Ritual price is 6 (Dragon's Keepsake tier price)", rose?.price === 6, String(rose?.price));
 
-check("Woodlands Wonderland has NO tier assignment yet", !("tier" in woodlands) || woodlands.tier == null || woodlands.tier === "",
-  JSON.stringify(woodlands?.tier));
-check("Woodlands Wonderland has NO invented price", !("price" in woodlands) || woodlands.price == null, JSON.stringify(woodlands?.price));
+check("Woodlands Wonderland is tiered Merchant's Heirloom", woodlands?.tier === "Merchant's Heirloom", woodlands?.tier);
+check("Woodlands Wonderland price is 8 (Merchant's Heirloom tier price)", woodlands?.price === 8, String(woodlands?.price));
 
 check("every tier referenced by any product is a defined tier in tiers.json",
   products.filter((p) => p.tier).every((p) => tierNames.includes(p.tier)),
@@ -239,10 +260,10 @@ check("manual IRL order selector shows tier price for Poison (— £5.50)",
   optionsHtml.includes(`value="poison" data-price="5.5">Poison — £5.50`));
 check("manual IRL order selector shows tier price for Petal & Potion (— £5.50)",
   optionsHtml.includes(`value="petal-and-potion" data-price="5.5">Petal & Potion — £5.50`));
-check("untiered Rose & Ritual contributes no false price to the selector",
-  optionsHtml.includes(`value="rose-and-ritual" data-price="0">Rose & Ritual</option>`));
-check("untiered Woodlands Wonderland contributes no false price to the selector",
-  optionsHtml.includes(`value="woodlands-wonderland" data-price="0">Woodlands Wonderland</option>`));
+check("manual IRL order selector shows tier price for Rose & Ritual (— £6.00)",
+  optionsHtml.includes(`value="rose-and-ritual" data-price="6">Rose & Ritual — £6.00`));
+check("manual IRL order selector shows tier price for Woodlands Wonderland (— £8.00)",
+  optionsHtml.includes(`value="woodlands-wonderland" data-price="8">Woodlands Wonderland — £8.00`));
 
 /* Dashboard inventory table joins catalogue products to inventory by ID
    (resolveStockStatus falls back to "unlimited" when no entry exists). */
@@ -279,15 +300,15 @@ check("server/dashboard price pathway resolves Poison via its tier (5.5)",
   serverGetProductPrice(poison, tiersData.tiers) === 5.5);
 check("server/dashboard price pathway resolves Petal & Potion via its tier (5.5)",
   serverGetProductPrice(petal, tiersData.tiers) === 5.5);
-check("Rose & Ritual has no resolvable price yet (kept out of online checkout until tiered)",
-  serverGetProductPrice(rose, tiersData.tiers) === null);
-check("Woodlands Wonderland has no resolvable price yet (kept out of online checkout until tiered)",
-  serverGetProductPrice(woodlands, tiersData.tiers) === null);
+check("server/dashboard price pathway resolves Rose & Ritual via its tier (6)",
+  serverGetProductPrice(rose, tiersData.tiers) === 6);
+check("server/dashboard price pathway resolves Woodlands Wonderland via its tier (8)",
+  serverGetProductPrice(woodlands, tiersData.tiers) === 8);
 
-/* The dashboard's own fallback (Number(p.price) || 0) must stay 0 for
-   untiered products, never NaN/undefined. */
-check("untiered products render a £0.00-neutral price attribute in the dashboard",
-  [rose, woodlands].every((p) => (Number(p.price) || 0) === 0));
+/* The dashboard's own fallback (Number(p.price) || 0) must render the
+   tier price for these products in the selector. */
+check("tiered products render their tier price attribute in the dashboard",
+  [rose, woodlands].every((p) => [6, 8].includes(Number(p.price) || 0)));
 
 /* ── Result summary ────────────────────────────────────────── */
 
