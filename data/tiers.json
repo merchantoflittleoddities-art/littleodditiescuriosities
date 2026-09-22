@@ -64,6 +64,19 @@
       "displayOrder": 4
     },
     {
+      "id": "dragons-keepsake",
+      "name": "Dragon's Keepsake",
+      "price": 6.00,
+      "includes": [
+        "3–4 bead colours",
+        "No charm",
+        "No spacer beads"
+      ],
+      "exampleBracelets": [],
+      "packaging": "Special Packaging",
+      "displayOrder": 4.5
+    },
+    {
       "id": "hidden-artifacts",
       "name": "Hidden Artifacts",
       "price": 6.50,
@@ -95,6 +108,19 @@
       ],
       "packaging": "Premium Packaging with Extra Goodies",
       "displayOrder": 6
+    },
+    {
+      "id": "merchants-heirloom",
+      "name": "Merchant's Heirloom",
+      "price": 8.00,
+      "includes": [
+        "2–4 bead colours",
+        "4+ charms (identical or different)",
+        "Spacer beads optional"
+      ],
+      "exampleBracelets": [],
+      "packaging": "Premium Packaging",
+      "displayOrder": 7
     },
     {
       "id": "oddly-adorned",
