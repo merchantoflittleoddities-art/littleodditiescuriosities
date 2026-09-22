@@ -389,6 +389,101 @@
         "3.jpg"
       ],
       "available": true
+    },
+    {
+      "id": "starlit-spores",
+      "name": "Starlit Spores",
+      "collection": "Enchanted Forest",
+      "tier": "Hidden Artifacts",
+      "price": 6.5,
+      "description": "A woodland-night treasure of medium purple and peachy-pink beads beneath a pink star and a green mushroom.",
+      "lore": "They say that deep in the oldest part of the forest grow mushrooms that drink starlight instead of rain. On clear nights their spores lift from the caps and drift upward, and the brightest never fall back down — they join the sky and become stars. Wanderers who have stood in that clearing swear the ground glows faintly, as if the woods were keeping a handful of heavens for themselves. Starlit Spores carries a little of that clearing with it: the feeling of standing somewhere quiet at midnight, looking up, and realising the stars may have grown from the earth all along.",
+      "materials": [
+        "Light pink nylon cord",
+        "Medium purple beads",
+        "Peachy/pink beads",
+        "Pink star charm",
+        "Green mushroom charm",
+        "Spacer beads",
+        "Sliding knot - size may vary"
+      ],
+      "packaging": "Special Packaging",
+      "images": [],
+      "available": true
+    },
+    {
+      "id": "poison",
+      "name": "Poison",
+      "collection": "Haunted Love",
+      "tier": "Forgotten Treasures",
+      "price": 5.5,
+      "description": "A dangerously sweet treasure of pink and white beads with a melting red heart at its centre.",
+      "lore": "In an apothecary at the edge of town sat a small heart-shaped bottle labelled, in careful handwriting, Poison. Those who peeked inside expected something dark and dangerous, yet the liquid within was soft rose-pink and smelled faintly of valentines. The apothecary never explained. Some say it was brewed for someone who was never told they were loved; others say it was a remedy for hearts gone quietly numb. The label stayed, because the truth was sweeter and stranger: some feelings are so intense they can only be confessed under a dangerous name. Poison is for the keeper of a heart that loves far too much to play it safe.",
+      "materials": [
+        "Red nylon cord",
+        "Pink beads",
+        "White beads",
+        "Single red bead",
+        "Red melting heart charm",
+        "Spacer beads",
+        "Sliding knot - size may vary"
+      ],
+      "packaging": "Standard Handmade Packaging",
+      "images": [],
+      "available": true
+    },
+    {
+      "id": "petal-and-potion",
+      "name": "Petal & Potion",
+      "collection": "Enchanted Forest",
+      "tier": "Forgotten Treasures",
+      "price": 5.5,
+      "description": "A botanical treasure of green and pink beads beneath a large hollow heart, half pink and half wood-coloured.",
+      "lore": "Tucked behind the allotment wall grows a rose no one planted, and beside it a copper pan left out in the rain. Every dawn, petal-fall drifts from the rose into the pan, where the droplets have gathered overnight — and by morning the water has turned the palest pink. It is said this is no accident of the wind. The rose has been steeping a very slow potion, one petal at a time, though for whom — or for what — the garden has never said. Those who lean over the wall swear the air smells of sugar and sap, and that whoever the potion is finally for will know exactly what to do with it.",
+      "materials": [
+        "White nylon cord",
+        "Green beads",
+        "Pink beads",
+        "Large hollow heart charm (half pink, half wood-coloured)",
+        "Spacer beads",
+        "Sliding knot - size may vary"
+      ],
+      "packaging": "Standard Handmade Packaging",
+      "images": [],
+      "available": true
+    },
+    {
+      "id": "rose-and-ritual",
+      "name": "Rose & Ritual",
+      "collection": "Forgotten Treasures",
+      "description": "A solemn keepsake of red, pink and black beads, woven with quiet ceremony and no charm to speak for it.",
+      "lore": "Before words, there were rituals: a candle lit the same hour each night, a rose laid where someone used to sit, a circle traced so many times it became a door. Devotion has always kept its own calendar, measured not in days but in repetitions. Some ceremonies mourn, and some insist — patiently, stubbornly — that what is loved is not yet lost. This treasure is woven in that spirit, each bead a small vow set in its place, the strand itself the circle that binds them. Its meaning is left deliberately unspoken, for the oldest rituals belong to whoever performs them.",
+      "materials": [
+        "White nylon cord",
+        "Red beads",
+        "Pink beads",
+        "Black beads",
+        "Sliding knot - size may vary"
+      ],
+      "images": [],
+      "available": true
+    },
+    {
+      "id": "woodlands-wonderland",
+      "name": "Woodlands Wonderland",
+      "collection": "Enchanted Forest",
+      "description": "A very mushroomy treasure: green and peach-pink beads beneath eight identical mushroom charms.",
+      "lore": "Beyond the bramble gate there is a clearing where the mushrooms hold their own midsummer festival. No invitations are sent — none are needed. When the evening light turns peach and the moss deepens to green, eight of the little villagers step out in perfect unison, each one standing precisely where a mushroom stood the year before, and the year before that. The festival has no name, no music and no visitors, yet it has never once been missed. Some wanderers claim the woods feel warmer that night, as though the whole clearing were smiling. This treasure keeps a little of that festival in its keeping — eight small revelers, mid-celebration, forever.",
+      "materials": [
+        "Green nylon cord",
+        "Green beads",
+        "Peach/pink beads",
+        "8 identical mushroom charms",
+        "Spacer beads",
+        "Sliding knot - size may vary"
+      ],
+      "images": [],
+      "available": true
     }
   ]
 }
